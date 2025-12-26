@@ -48,12 +48,12 @@ export default function LoginPage() {
 
   return (
     <div 
-      className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0B74B0]/10 to-[#75479C]/10 dark:from-gray-900 dark:to-gray-800 p-4"
+      className="min-h-screen flex items-center justify-center bg-linear-to-br from-[#0B74B0]/10 to-[#75479C]/10 dark:from-gray-900 dark:to-gray-800 p-4"
     >
       {/* Login Card */}
       <div className="relative z-10 bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden w-full max-w-md">
         {/* Header with gradient */}
-        <div className="bg-gradient-to-r from-[#0B74B0] to-[#75479C] p-6 text-center">
+        <div className="bg-linear-to-r from-[#0B74B0] to-[#75479C] p-6 text-center">
           <div className="flex justify-center mb-4">
             <div className="bg-white p-2 rounded-full">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-[#0B74B0]" viewBox="0 0 20 20" fill="currentColor">
@@ -132,7 +132,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-gradient-to-r from-[#0B74B0] to-[#75479C] hover:from-[#0B74B0]/90 hover:to-[#75479C]/90 text-white font-medium py-2 px-4 rounded-lg transition duration-300 ease-in-out transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+              className="w-full bg-linear-to-r from-[#0B74B0] to-[#75479C] hover:from-[#0B74B0]/90 hover:to-[#75479C]/90 text-white font-medium py-2 px-4 rounded-lg transition duration-300 ease-in-out transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
             >
               {loading ? (
                 <span className="flex items-center justify-center">

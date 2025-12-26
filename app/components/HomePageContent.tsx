@@ -11,7 +11,7 @@ export default function HomePageContent() {
         <div className="text-center mb-12 mt-8">
           <div className="flex justify-between items-center">
             <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent mb-4">
-              Adani Capacity tracker
+              Assest commissioning
             </h1>
             <button
               onClick={toggleTheme}

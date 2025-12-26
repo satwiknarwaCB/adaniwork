@@ -15,7 +15,7 @@ import bcrypt
 import jwt
 from database import get_db_connection, init_db
 from schemas import (
-    TableDataRequest, DropdownOptions, LocationRelationship, RestoreBackupRequest, TableRow, UserRegister, UserLogin, UserResponse, LoginResponse, Variable
+    TableDataRequest, DropdownOptions, LocationRelationship, RestoreBackupRequest, TableRow, UserRegister, UserLogin, UserResponse, LoginResponse, Variable, CommissioningProject, CommissioningSummary, CommissioningDataRequest
 )
 
 # JWT configuration
@@ -75,7 +75,7 @@ async def login_user(user: UserLogin):
    
     try:
         # Find user by email
-        cursor.execute("SELECT id, username, email, password, created_at FROM users WHERE email = ?", (user.email,))
+        cursor.execute("SELECT id, username, email, password, role, created_at FROM users WHERE email = ?", (user.email,))
         db_user = cursor.fetchone()
        
         if not db_user:
@@ -102,6 +102,7 @@ async def login_user(user: UserLogin):
             "id": db_user["id"],
             "username": db_user["username"],
             "email": db_user["email"],
+            "role": db_user["role"] if db_user["role"] else "viewer",
             "created_at": db_user["created_at"]
         }
        
@@ -271,7 +272,7 @@ async def api_delete_variable(key: str, user_id: Optional[str] = None):
 # --- Dropdown Options Endpoints ---
 
 @app.get("/dropdown-options")
-def get_dropdown_options():
+def get_dropdown_options(fiscalYear: str = Query(None)):
     conn = get_db_connection()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
@@ -320,8 +321,8 @@ def get_dropdown_options():
 
 # Additional route with /api prefix for direct access
 @app.get("/api/dropdown-options")
-def api_get_dropdown_options():
-    return get_dropdown_options()
+def api_get_dropdown_options(fiscalYear: str = Query(None)):
+    return get_dropdown_options(fiscalYear)
 
 @app.post("/dropdown-options")
 def save_dropdown_options(options: DropdownOptions):
@@ -1071,3 +1072,252 @@ def api_import_data():
 @app.post("/api/import-default-data")
 def api_import_default_data():
     return import_default_data()
+
+# --- Commissioning Status Endpoints ---
+
+@app.get("/commissioning-projects")
+def get_commissioning_projects(fiscalYear: str = Query("FY_25-26")):
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            SELECT * FROM commissioning_projects 
+            WHERE fiscal_year = ? AND is_deleted = 0
+            ORDER BY category, sno
+        ''', (fiscalYear,))
+        rows = cursor.fetchall()
+        
+        projects = []
+        for row in rows:
+            # Convert row to dict for safer access
+            row_dict = dict(row)
+            
+            # Calculate totalCapacity from monthly values (Apr-Mar)
+            monthly_sum = sum([
+                row_dict.get('apr') or 0,
+                row_dict.get('may') or 0,
+                row_dict.get('jun') or 0,
+                row_dict.get('jul') or 0,
+                row_dict.get('aug') or 0,
+                row_dict.get('sep') or 0,
+                row_dict.get('oct') or 0,
+                row_dict.get('nov') or 0,
+                row_dict.get('dec') or 0,
+                row_dict.get('jan') or 0,
+                row_dict.get('feb') or 0,
+                row_dict.get('mar') or 0
+            ])
+            
+            # Calculate cummTillOct from Apr-Oct
+            cumm_till_oct = sum([
+                row_dict.get('apr') or 0,
+                row_dict.get('may') or 0,
+                row_dict.get('jun') or 0,
+                row_dict.get('jul') or 0,
+                row_dict.get('aug') or 0,
+                row_dict.get('sep') or 0,
+                row_dict.get('oct') or 0
+            ])
+            
+            # Calculate quarters
+            q1 = sum([row_dict.get('apr') or 0, row_dict.get('may') or 0, row_dict.get('jun') or 0])
+            q2 = sum([row_dict.get('jul') or 0, row_dict.get('aug') or 0, row_dict.get('sep') or 0])
+            q3 = sum([row_dict.get('oct') or 0, row_dict.get('nov') or 0, row_dict.get('dec') or 0])
+            q4 = sum([row_dict.get('jan') or 0, row_dict.get('feb') or 0, row_dict.get('mar') or 0])
+            
+            projects.append({
+                'id': row_dict['id'],
+                'sno': row_dict['sno'],
+                'projectName': row_dict['project_name'],
+                'spv': row_dict['spv'],
+                'projectType': row_dict['project_type'],
+                'plotLocation': row_dict['plot_location'],
+                'capacity': row_dict['capacity'],
+                'planActual': row_dict['plan_actual'],
+                'apr': row_dict['apr'],
+                'may': row_dict['may'],
+                'jun': row_dict['jun'],
+                'jul': row_dict['jul'],
+                'aug': row_dict['aug'],
+                'sep': row_dict['sep'],
+                'oct': row_dict['oct'],
+                'nov': row_dict['nov'],
+                'dec': row_dict['dec'],
+                'jan': row_dict['jan'],
+                'feb': row_dict['feb'],
+                'mar': row_dict['mar'],
+                'totalCapacity': monthly_sum,
+                'cummTillOct': cumm_till_oct,
+                'q1': q1,
+                'q2': q2,
+                'q3': q3,
+                'q4': q4,
+                'category': row_dict['category'],
+                'section': row_dict.get('section', 'A'),
+                'includedInTotal': bool(row_dict.get('included_in_total', True))
+            })
+        return projects
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.get("/api/commissioning-projects")
+def api_get_commissioning_projects(fiscalYear: str = Query("FY_25-26")):
+    return get_commissioning_projects(fiscalYear)
+
+@app.post("/commissioning-projects")
+def save_commissioning_projects(projects: List[CommissioningProject], fiscalYear: str = Query("FY_25-26")):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # Soft delete existing
+        cursor.execute('''
+            UPDATE commissioning_projects
+            SET is_deleted = 1, updated_at = CURRENT_TIMESTAMP
+            WHERE fiscal_year = ?
+        ''', (fiscalYear,))
+        
+        # Insert new
+        for proj in projects:
+            cursor.execute('''
+                INSERT INTO commissioning_projects (
+                    fiscal_year, sno, project_name, spv, project_type, plot_location,
+                    capacity, plan_actual, apr, may, jun, jul, aug, sep, oct, nov, dec,
+                    jan, feb, mar, total_capacity, cumm_till_oct, q1, q2, q3, q4, category, section, included_in_total
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                fiscalYear, proj.sno, proj.projectName, proj.spv, proj.projectType,
+                proj.plotLocation, proj.capacity, proj.planActual,
+                proj.apr, proj.may, proj.jun, proj.jul, proj.aug, proj.sep,
+                proj.oct, proj.nov, proj.dec, proj.jan, proj.feb, proj.mar,
+                proj.totalCapacity, proj.cummTillOct, proj.q1, proj.q2, proj.q3, proj.q4, proj.category,
+                proj.section, proj.includedInTotal
+            ))
+        
+        conn.commit()
+        return {"message": "Commissioning projects saved successfully", "count": len(projects)}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.post("/api/commissioning-projects")
+def api_save_commissioning_projects(projects: List[CommissioningProject], fiscalYear: str = Query("FY_25-26")):
+    return save_commissioning_projects(projects, fiscalYear)
+
+@app.delete("/commissioning-projects/{project_id}")
+def delete_commissioning_project(project_id: int):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            UPDATE commissioning_projects
+            SET is_deleted = 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (project_id,))
+        
+        if cursor.rowcount > 0:
+            conn.commit()
+            return {"message": "Project deleted successfully"}
+        else:
+            raise HTTPException(status_code=404, detail="Project not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.delete("/api/commissioning-projects/{project_id}")
+def api_delete_commissioning_project(project_id: int):
+    return delete_commissioning_project(project_id)
+
+@app.get("/commissioning-summaries")
+def get_commissioning_summaries(fiscalYear: str = Query("FY_25-26")):
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            SELECT * FROM commissioning_summaries 
+            WHERE fiscal_year = ? AND is_deleted = 0
+            ORDER BY summary_type, category
+        ''', (fiscalYear,))
+        rows = cursor.fetchall()
+        
+        summaries = []
+        for row in rows:
+            summaries.append({
+                'id': row['id'],
+                'category': row['category'],
+                'summaryType': row['summary_type'],
+                'apr': row['apr'],
+                'may': row['may'],
+                'jun': row['jun'],
+                'jul': row['jul'],
+                'aug': row['aug'],
+                'sep': row['sep'],
+                'oct': row['oct'],
+                'nov': row['nov'],
+                'dec': row['dec'],
+                'jan': row['jan'],
+                'feb': row['feb'],
+                'mar': row['mar'],
+                'total': row['total'],
+                'cummTillOct': row['cumm_till_oct'],
+                'q1': row['q1'],
+                'q2': row['q2'],
+                'q3': row['q3'],
+                'q4': row['q4']
+            })
+        return summaries
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.get("/api/commissioning-summaries")
+def api_get_commissioning_summaries(fiscalYear: str = Query("FY_25-26")):
+    return get_commissioning_summaries(fiscalYear)
+
+@app.post("/commissioning-summaries")
+def save_commissioning_summaries(summaries: List[CommissioningSummary], fiscalYear: str = Query("FY_25-26")):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # Soft delete existing
+        cursor.execute('''
+            UPDATE commissioning_summaries
+            SET is_deleted = 1, updated_at = CURRENT_TIMESTAMP
+            WHERE fiscal_year = ?
+        ''', (fiscalYear,))
+        
+        # Insert new
+        for summary in summaries:
+            cursor.execute('''
+                INSERT INTO commissioning_summaries (
+                    fiscal_year, category, summary_type, apr, may, jun, jul, aug, sep,
+                    oct, nov, dec, jan, feb, mar, total, cumm_till_oct, q1, q2, q3, q4
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                fiscalYear, summary.category, summary.summaryType,
+                summary.apr, summary.may, summary.jun, summary.jul, summary.aug, summary.sep,
+                summary.oct, summary.nov, summary.dec, summary.jan, summary.feb, summary.mar,
+                summary.total, summary.cummTillOct, summary.q1, summary.q2, summary.q3, summary.q4
+            ))
+        
+        conn.commit()
+        return {"message": "Commissioning summaries saved successfully", "count": len(summaries)}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.post("/api/commissioning-summaries")
+def api_save_commissioning_summaries(summaries: List[CommissioningSummary], fiscalYear: str = Query("FY_25-26")):
+    return save_commissioning_summaries(summaries, fiscalYear)

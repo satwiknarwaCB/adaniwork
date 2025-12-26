@@ -13,15 +13,13 @@ const Cards = () => {
             Live
           </span>
         </div>
-        <h3 className="text-md font-bold mb-3 text-gray-900 dark:text-white">Capacity Tracker<span>/</span>Asset Commenting </h3>
+        <h3 className="text-md font-bold mb-3 text-gray-900 dark:text-white">AGEL FY 25-26 Commissioning Portal</h3>
         <p className=" text-sm text-gray-600 dark:text-gray-300 mb-4">
           Here you can track the capacity of your energy sources in real-time and optimize your energy usage.
         </p>
-        <Link href="/application">
-          <button className="bg-gradient-to-r from-[#0B74B0] to-[#75479C] text-white font-medium py-2 px-4 rounded-lg transition-all hover:from-[#0B74B0]/90 hover:to-[#75479C]/90 active:scale-95">
-            Launch Application
-          </button>
-        </Link>
+        <button className="bg-linear-to-r from-[#0B74B0] to-[#75479C] text-white font-medium py-2 px-4 rounded-lg transition-all hover:from-[#0B74B0]/90 hover:to-[#75479C]/90 active:scale-95" onClick={() => window.location.href = '/application'}>
+          Launch Application
+        </button>
       </MagicCard>
 
       {/* Card 2 - Upcoming */}
@@ -35,8 +33,9 @@ const Cards = () => {
         <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
           Commitment to sustainable practices that protect our environment for future generations.
         </p>
-        <button className="mt-auto bg-gradient-to-r from-[#0B74B0] to-[#75479C] text-white font-medium py-2 px-4 rounded-lg transition-all hover:from-[#0B74B0]/90 hover:to-[#75479C]/90 active:scale-95 opacity-50 cursor-not-allowed" disabled>
-launch Application        </button>
+        <button className="mt-auto bg-linear-to-r from-[#0B74B0] to-[#75479C] text-white font-medium py-2 px-4 rounded-lg transition-all hover:from-[#0B74B0]/90 hover:to-[#75479C]/90 active:scale-95 opacity-50 cursor-not-allowed" disabled>
+          Launch Application
+        </button>
       </MagicCard>
 
       {/* Card 3 - Upcoming */}
@@ -50,8 +49,9 @@ launch Application        </button>
         <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
           Cutting-edge technology and research driving the future of energy and sustainability initiatives.
         </p>
-        <button className="bg-gradient-to-r from-[#0B74B0] to-[#75479C] text-white font-medium py-2 px-4 rounded-lg transition-all hover:from-[#0B74B0]/90 hover:to-[#75479C]/90 active:scale-95 opacity-50 cursor-not-allowed" disabled>
-launch Application        </button>
+        <button className="bg-linear-to-r from-[#0B74B0] to-[#75479C] text-white font-medium py-2 px-4 rounded-lg transition-all hover:from-[#0B74B0]/90 hover:to-[#75479C]/90 active:scale-95 opacity-50 cursor-not-allowed" disabled>
+          Launch Application
+        </button>
       </MagicCard>
     </div>
   );

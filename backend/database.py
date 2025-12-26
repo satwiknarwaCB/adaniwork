@@ -69,7 +69,94 @@ def init_db():
                 username TEXT UNIQUE NOT NULL,
                 email TEXT UNIQUE NOT NULL,
                 password TEXT NOT NULL,
+                role TEXT DEFAULT 'viewer',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Add role column if it doesn't exist (for existing databases)
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'viewer'")
+        except:
+            pass  # Column already exists
+        
+        # Commissioning Projects
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS commissioning_projects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fiscal_year TEXT NOT NULL,
+                sno INTEGER NOT NULL,
+                project_name TEXT NOT NULL,
+                spv TEXT NOT NULL,
+                project_type TEXT NOT NULL,
+                plot_location TEXT NOT NULL,
+                capacity REAL,
+                plan_actual TEXT NOT NULL,
+                apr REAL,
+                may REAL,
+                jun REAL,
+                jul REAL,
+                aug REAL,
+                sep REAL,
+                oct REAL,
+                nov REAL,
+                dec REAL,
+                jan REAL,
+                feb REAL,
+                mar REAL,
+                total_capacity REAL,
+                cumm_till_oct REAL,
+                q1 REAL,
+                q2 REAL,
+                q3 REAL,
+                q4 REAL,
+                category TEXT NOT NULL,
+                section TEXT NOT NULL DEFAULT 'A',
+                included_in_total BOOLEAN DEFAULT TRUE,
+                is_deleted BOOLEAN DEFAULT FALSE,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Add section and included_in_total columns if they don't exist
+        try:
+            cursor.execute("ALTER TABLE commissioning_projects ADD COLUMN section TEXT NOT NULL DEFAULT 'A'")
+        except:
+            pass
+        try:
+            cursor.execute("ALTER TABLE commissioning_projects ADD COLUMN included_in_total BOOLEAN DEFAULT TRUE")
+        except:
+            pass
+        
+        # Commissioning Summaries
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS commissioning_summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fiscal_year TEXT NOT NULL,
+                category TEXT NOT NULL,
+                summary_type TEXT NOT NULL,
+                apr REAL,
+                may REAL,
+                jun REAL,
+                jul REAL,
+                aug REAL,
+                sep REAL,
+                oct REAL,
+                nov REAL,
+                dec REAL,
+                jan REAL,
+                feb REAL,
+                mar REAL,
+                total REAL,
+                cumm_till_oct REAL,
+                q1 REAL,
+                q2 REAL,
+                q3 REAL,
+                q4 REAL,
+                is_deleted BOOLEAN DEFAULT FALSE,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
 
@@ -93,6 +180,8 @@ def init_db():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_location_relationships_fiscal_year ON location_relationships(fiscal_year)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_location_relationships_fiscal_year_deleted ON location_relationships(fiscal_year, is_deleted)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_variables_key_user ON variables(key, user_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_commissioning_projects_fiscal_year ON commissioning_projects(fiscal_year)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_commissioning_summaries_fiscal_year ON commissioning_summaries(fiscal_year)')
 
         # Create admin user if it doesn't exist
         admin_email = "admin@adani.com"
@@ -106,12 +195,15 @@ def init_db():
         if not existing_user:
             # Hash the password
             hashed_password = bcrypt.hashpw(admin_password.encode('utf-8'), bcrypt.gensalt())
-            # Insert admin user
+            # Insert admin user with admin role
             cursor.execute(
-                "INSERT INTO users (username, email, password) VALUES (?, ?, ?)",
-                (admin_username, admin_email, hashed_password)
+                "INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)",
+                (admin_username, admin_email, hashed_password, 'admin')
             )
             print(f"Admin user created: {admin_email}")
+        else:
+            # Update existing admin user to have admin role
+            cursor.execute("UPDATE users SET role = 'admin' WHERE email = ?", (admin_email,))
 
         conn.commit()
         print("SQLite database initialized successfully")

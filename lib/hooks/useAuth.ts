@@ -4,6 +4,7 @@ interface User {
   id: number;
   username: string;
   email: string;
+  role: 'admin' | 'viewer';
   created_at: string;
 }
 
@@ -62,5 +63,6 @@ export function useAuth() {
     loading,
     login,
     logout,
+    isAdmin: user?.role === 'admin',
   };
 }

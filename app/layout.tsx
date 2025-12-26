@@ -13,8 +13,8 @@ const adani = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "AGEL CEO Tracker",
-  description: "Manage energy data with Excel export functionality",
+  title: "AGEL FY 25-26 Commissioning Status Portal",
+  description: "Track commissioning status for AGEL FY 25-26",
 };
 
 export default function RootLayout({

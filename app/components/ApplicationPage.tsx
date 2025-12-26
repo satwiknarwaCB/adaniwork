@@ -2,13 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import MasterDataTable from '@/app/components/MasterDataTable';
-import AnalyticsPage from '@/app/components/AnalyticsPage';
+import CommissioningStatusPage from '@/app/components/CommissioningStatusPage';
+import LoginPage from '@/app/components/LoginPage';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 
 const ApplicationPage = () => {
-  const [activePage, setActivePage] = useState('analytics');
+  const [activePage, setActivePage] = useState('commissioning');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [theme, setTheme] = useState('light');
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -88,65 +88,23 @@ const ApplicationPage = () => {
           <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
         </svg>
       ),
-      href: '/'  // Add href for navigation to main page
+      href: '/'
     },
     { 
-      id: 'analytics', 
-      name: 'Analytics', 
+      id: 'commissioning', 
+      name: 'Commissioning Status', 
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-          <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1v-12a1 1 0 011-1h2z" />
+          <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
         </svg>
-      )
-    },
-    { 
-      id: 'master-data', 
-      name: 'Master Data', 
-      icon: (
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-          <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H9a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
-        </svg>
-      )
+      ),
+      href: undefined
     },
   ];
 
   // Define page content based on active page
   const renderPageContent = () => {
-    switch (activePage) {
-      case 'home':
-        return (
-          <div>
-            <h2 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Dashboard</h2>
-            <p className="text-gray-600 dark:text-gray-300">Welcome to your dashboard. Here you can view key metrics and insights.</p>
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-white dark:bg-[#171717] p-4 rounded-lg shadow">
-                <h3 className="font-semibold text-gray-900 dark:text-white">Total Capacity</h3>
-                <p className="text-2xl font-bold text-[#0B74B0]">1,250 MW</p>
-              </div>
-              <div className="bg-white dark:bg-[#171717] p-4 rounded-lg shadow">
-                <h3 className="font-semibold text-gray-900 dark:text-white">Active Projects</h3>
-                <p className="text-2xl font-bold text-[#75479C]">24</p>
-              </div>
-              <div className="bg-white dark:bg-[#171717] p-4 rounded-lg shadow">
-                <h3 className="font-semibold text-gray-900 dark:text-white">Efficiency</h3>
-                <p className="text-2xl font-bold text-[#BD3861]">94%</p>
-              </div>
-            </div>
-          </div>
-        );
-      case 'analytics':
-        return <AnalyticsPage />;
-      case 'master-data':
-        return (
-          <div>
-            <h2 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Master Data</h2>
-            <p className="text-gray-600 dark:text-gray-300 mb-6">View and Edit Master Data.</p>
-            <MasterDataTable />
-          </div>
-        );
-      default:
-        return <AnalyticsPage />;
-    }
+    return <CommissioningStatusPage />;
   };
 
   return (
@@ -169,7 +127,7 @@ const ApplicationPage = () => {
             <div className="text-xs text-gray-500 dark:text-gray-400">{formatTime(currentTime)}</div>
           </div>
           
-          {user && (
+          {user ? (
             <button
               onClick={handleLogout}
               className="p-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
@@ -178,6 +136,13 @@ const ApplicationPage = () => {
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clipRule="evenodd" />
               </svg>
+            </button>
+          ) : (
+            <button
+              onClick={() => router.push('/login?redirect=/application')}
+              className="px-4 py-2 bg-linear-to-r from-[#0B74B0] to-[#75479C] text-white rounded-lg hover:from-[#0B74B0]/90 hover:to-[#75479C]/90 font-medium text-sm"
+            >
+              Login to Access
             </button>
           )}
           
