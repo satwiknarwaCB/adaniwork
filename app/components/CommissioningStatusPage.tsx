@@ -871,7 +871,7 @@ export default function CommissioningStatusPage() {
                     </div>
                   ) : null}
                   
-                  {uploadResult.failed > 0 && (
+                  {uploadResult && uploadResult.failed != null && uploadResult.failed > 0 && (
                     <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg">
                       <p className="text-sm font-medium text-orange-800 dark:text-orange-400">
                         ⚠ {uploadResult.failed} row(s) failed
