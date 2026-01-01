@@ -1,6 +1,8 @@
-from fastapi import FastAPI, HTTPException, Query, Body, Depends, Request, status
+from fastapi import FastAPI, HTTPException, Query, Body, Depends, Request, status, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
+import pandas as pd
+import io
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Dict, Any, Optional
@@ -15,7 +17,8 @@ import bcrypt
 import jwt
 from database import get_db_connection, init_db
 from schemas import (
-    TableDataRequest, DropdownOptions, LocationRelationship, RestoreBackupRequest, TableRow, UserRegister, UserLogin, UserResponse, LoginResponse, Variable, CommissioningProject, CommissioningSummary, CommissioningDataRequest
+    UserRegister, UserLogin, UserResponse, LoginResponse,
+    CommissioningProject, CommissioningSummary, CommissioningDataRequest
 )
 
 # JWT configuration
@@ -174,7 +177,7 @@ async def api_get_variables(key: Optional[str] = None, user_id: Optional[str] = 
 
 # Set a variable
 @app.post("/variables")
-async def set_variable(variable: Variable):
+async def set_variable(variable: dict):
     conn = get_db_connection()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
@@ -228,7 +231,7 @@ async def set_variable(variable: Variable):
 
 # Additional route with /api prefix for direct access
 @app.post("/api/variables")
-async def api_set_variable(variable: Variable):
+async def api_set_variable(variable: dict):
     return await set_variable(variable)
 
 # Delete a variable
@@ -325,7 +328,7 @@ def api_get_dropdown_options(fiscalYear: str = Query(None)):
     return get_dropdown_options(fiscalYear)
 
 @app.post("/dropdown-options")
-def save_dropdown_options(options: DropdownOptions):
+def save_dropdown_options(options: dict):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -368,7 +371,7 @@ def save_dropdown_options(options: DropdownOptions):
 
 # Additional route with /api prefix for direct access
 @app.post("/api/dropdown-options")
-def api_save_dropdown_options(options: DropdownOptions):
+def api_save_dropdown_options(options: dict):
     return save_dropdown_options(options)
 
 # Additional route for single dropdown option (used by Next.js)
@@ -566,7 +569,7 @@ def api_get_table_data(fiscalYear: str = Query(..., description="Fiscal Year")):
     return get_table_data(fiscalYear)
 
 @app.post("/table-data")
-def save_table_data(request: TableDataRequest):
+def save_table_data(request: dict):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -618,7 +621,7 @@ def save_table_data(request: TableDataRequest):
 
 # Additional route with /api prefix for direct access
 @app.post("/api/table-data")
-def api_save_table_data(request: TableDataRequest):
+def api_save_table_data(request: dict):
     return save_table_data(request)
 
 @app.delete("/table-data")
@@ -686,7 +689,7 @@ def get_location_relationships(fiscalYear: str = Query("FY_25", description="Fis
 
 @app.post("/location-relationships")
 def save_location_relationships(
-    relationships: List[LocationRelationship],
+    relationships: list,
     fiscalYear: str = Query("FY_25")
 ):
     conn = get_db_connection()
@@ -722,7 +725,7 @@ def api_get_location_relationships(fiscalYear: str = Query("FY_25")):
 # Additional route with /api prefix for direct access
 @app.post("/api/location-relationships")
 def api_save_location_relationships(
-    relationships: List[LocationRelationship],
+    relationships: list,
     fiscalYear: str = Query("FY_25")
 ):
     return save_location_relationships(relationships, fiscalYear)
@@ -760,7 +763,7 @@ def get_backups(fiscalYear: str = Query("FY_25")):
         conn.close()
 
 @app.post("/backup-data/restore")
-def restore_backup(request: RestoreBackupRequest):
+def restore_backup(request: dict):
     conn = get_db_connection()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
@@ -877,7 +880,7 @@ def api_get_backups(fiscalYear: str = Query("FY_25")):
 
 # Additional route with /api prefix for direct access
 @app.post("/api/backup-data/restore")
-def api_restore_backup(request: RestoreBackupRequest):
+def api_restore_backup(request: dict):
     return restore_backup(request)
 
 # Additional route with /api prefix for direct access
@@ -1004,7 +1007,7 @@ def import_default_data():
 
 # Add this new endpoint after the existing import endpoints
 @app.post("/import-data-from-frontend")
-def import_data_from_frontend(request: TableDataRequest):
+def import_data_from_frontend(request: dict):
     """
     Import data directly from frontend - useful for production environments
     where local JSON files might not be available
@@ -1060,7 +1063,7 @@ def import_data_from_frontend(request: TableDataRequest):
 
 # Additional route with /api prefix for direct access
 @app.post("/api/import-data-from-frontend")
-def api_import_data_from_frontend(request: TableDataRequest):
+def api_import_data_from_frontend(request: dict):
     return import_data_from_frontend(request)
 
 # Additional route with /api prefix for direct access
@@ -1093,7 +1096,7 @@ def get_commissioning_projects(fiscalYear: str = Query("FY_25-26")):
             # Convert row to dict for safer access
             row_dict = dict(row)
             
-            # Calculate totalCapacity from monthly values (Apr-Mar)
+            # Calculate monthly sum (Apr-Mar) - used for ACTUAL only
             monthly_sum = sum([
                 row_dict.get('apr') or 0,
                 row_dict.get('may') or 0,
@@ -1108,6 +1111,15 @@ def get_commissioning_projects(fiscalYear: str = Query("FY_25-26")):
                 row_dict.get('feb') or 0,
                 row_dict.get('mar') or 0
             ])
+            
+            # CRITICAL FIX: Row Total Logic per PDF Spec
+            # PLAN/REPHASE: totalCapacity = capacity (the project's planned capacity)
+            # ACTUAL: totalCapacity = sum of monthly values
+            plan_actual = row_dict.get('plan_actual', '')
+            if plan_actual in ['Plan', 'Rephase']:
+                total_capacity = row_dict.get('capacity') or 0
+            else:  # ACTUAL / Fcst
+                total_capacity = monthly_sum
             
             # Calculate cummTillOct from Apr-Oct
             cumm_till_oct = sum([
@@ -1147,7 +1159,7 @@ def get_commissioning_projects(fiscalYear: str = Query("FY_25-26")):
                 'jan': row_dict['jan'],
                 'feb': row_dict['feb'],
                 'mar': row_dict['mar'],
-                'totalCapacity': monthly_sum,
+                'totalCapacity': total_capacity,
                 'cummTillOct': cumm_till_oct,
                 'q1': q1,
                 'q2': q2,
@@ -1321,3 +1333,198 @@ def save_commissioning_summaries(summaries: List[CommissioningSummary], fiscalYe
 @app.post("/api/commissioning-summaries")
 def api_save_commissioning_summaries(summaries: List[CommissioningSummary], fiscalYear: str = Query("FY_25-26")):
     return save_commissioning_summaries(summaries, fiscalYear)
+
+
+@app.post("/api/upload-commissioning-data")
+async def upload_commissioning_data(
+    file: UploadFile = File(...),
+    fiscalYear: str = Form("FY_25-26")
+):
+    """
+    Upload commissioning data from a multi-row structured Excel file.
+    Identifies projects by S.No, Name, and SPV.
+    Handles Plan, Rephase, and Actual / Fcst rows.
+    """
+    try:
+        contents = await file.read()
+        # Read without header to find the header row manually
+        df = pd.read_excel(io.BytesIO(contents), header=None)
+        
+        # Find header row (usually Row 35, index 34-36)
+        start_row = 0
+        for i in range(len(df)):
+            row_vals = [str(v).strip() for v in df.iloc[i]]
+            if 'Project Name' in row_vals and 'Plan Actual' in row_vals:
+                start_row = i
+                print(f"Header row found at index {i}")
+                break
+        else:
+            # Fallback if specific header not found
+            raise HTTPException(status_code=400, detail="Could not find header row with 'Project Name' and 'Plan Actual'")
+
+        # Define month columns based on found header row
+        header_vals = df.iloc[start_row].tolist()
+        month_indices = {}
+        target_months = ['Apr-25', 'May-25', 'Jun-25', 'Jul-25', 'Aug-25', 'Sep-25', 
+                         'Oct-25', 'Nov-25', 'Dec-25', 'Jan-26', 'Feb-26', 'Mar-26']
+        
+        for idx, val in enumerate(header_vals):
+            val_str = str(val).strip()
+            if val_str in target_months:
+                month_indices[val_str] = idx
+
+        db_month_map = {
+            'Apr-25': 'apr', 'May-25': 'may', 'Jun-25': 'jun', 
+            'Jul-25': 'jul', 'Aug-25': 'aug', 'Sep-25': 'sep', 
+            'Oct-25': 'oct', 'Nov-25': 'nov', 'Dec-25': 'dec', 
+            'Jan-26': 'jan', 'Feb-26': 'feb', 'Mar-26': 'mar'
+        }
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        success_count = 0
+        failed_count = 0
+        errors = []
+        
+        # Current project state
+        current_project = {
+            "name": None,
+            "spv": None,
+            "sno": None,
+            "capacity": None
+        }
+
+        # Value helper
+        def to_float(val):
+            try:
+                if pd.isna(val) or str(val).strip() == '':
+                    return 0.0
+                return float(val)
+            except:
+                return 0.0
+
+        # Iterate through rows starting from the row after header
+        for i in range(start_row + 1, len(df)):
+            row = df.iloc[i].tolist()
+            
+            # Check if this row starts a new project (Col 1 is Project Name)
+            proj_name = str(row[1]).strip() if not pd.isna(row[1]) else None
+            if proj_name and proj_name not in ('nan', '', '0.0', 'S.No.'):
+                current_project["name"] = proj_name
+                current_project["spv"] = str(row[2]).strip() if not pd.isna(row[2]) else ""
+                current_project["sno"] = row[0]
+                current_project["capacity"] = to_float(row[5])
+                # print(f"Processing project: {proj_name} ({current_project['spv']})")
+
+            # Check Plan Actual Type (Col 6)
+            plan_actual_raw = str(row[6]).strip() if not pd.isna(row[6]) else None
+            if not plan_actual_raw or plan_actual_raw in ('nan', 'Plan Actual'):
+                continue
+
+            # Normalize type
+            plan_actual = plan_actual_raw
+            if "Actual" in plan_actual_raw:
+                plan_actual = "Actual"
+            elif "Plan" in plan_actual_raw:
+                plan_actual = "Plan"
+            elif "Rephase" in plan_actual_raw:
+                plan_actual = "Rephase"
+
+            if not current_project["name"]:
+                continue
+
+            # Find matching project in DB
+            cursor.execute('''
+                SELECT id FROM commissioning_projects 
+                WHERE project_name = ? AND spv = ? AND plan_actual = ? AND fiscal_year = ?
+            ''', (current_project["name"], current_project["spv"], plan_actual, fiscalYear))
+            
+            proj_record = cursor.fetchone()
+            
+            if not proj_record:
+                # Try fallback matching (e.g. without SPV if SPV is messy in excel)
+                cursor.execute('''
+                    SELECT id FROM commissioning_projects 
+                    WHERE project_name = ? AND plan_actual = ? AND fiscal_year = ?
+                ''', (current_project["name"], plan_actual, fiscalYear))
+                proj_record = cursor.fetchone()
+
+            if proj_record:
+                proj_id = proj_record['id']
+                
+                # Update monthly values
+                update_fields = []
+                update_params = []
+                
+                for excel_col, db_col in db_month_map.items():
+                    if excel_col in month_indices:
+                        val = to_float(row[month_indices[excel_col]])
+                        update_fields.append(f"{db_col} = ?")
+                        update_params.append(val)
+                
+                if update_fields:
+                    update_params.append(proj_id)
+                    cursor.execute(f'''
+                        UPDATE commissioning_projects 
+                        SET {", ".join(update_fields)}, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    ''', tuple(update_params))
+                    success_count += 1
+            else:
+                # Log mismatch if it's a real project row
+                if current_project["name"] and len(current_project["name"]) > 2:
+                    failed_count += 1
+                    errors.append(f"Row {i+1}: Project '{current_project['name']}' with type '{plan_actual}' not found in DB")
+
+        conn.commit()
+        conn.close()
+        
+        return {
+            "success": success_count,
+            "failed": failed_count,
+            "errors": errors[:50] # Limit error count
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to process upload: {str(e)}")
+@app.post("/api/reset-commissioning-data")
+def reset_commissioning_data(request: dict):
+    """
+    Resets all monthly values to 0 for a given fiscal year.
+    Expects json body: { "fiscalYear": "FY_25-26" }
+    """
+    fiscal_year = request.get("fiscalYear", "FY_25-26")
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Reset monthly columns to NULL or 0
+        cursor.execute('''
+            UPDATE commissioning_projects 
+            SET apr = NULL, may = NULL, jun = NULL, jul = NULL, aug = NULL, sep = NULL,
+                oct = NULL, nov = NULL, dec = NULL, jan = NULL, feb = NULL, mar = NULL,
+                total_capacity = 0, cumm_till_oct = 0, q1 = 0, q2 = 0, q3 = 0, q4 = 0,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE fiscal_year = ?
+        ''', (fiscal_year,))
+        
+        updated_count = cursor.rowcount
+        conn.commit()
+        
+        # Recalculate derived (will just confirm 0s)
+        calculate_derived_values(cursor)
+        conn.commit()
+        
+        conn.close()
+        return {"message": "Commissioning data reset successfully", "count": updated_count}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8002)

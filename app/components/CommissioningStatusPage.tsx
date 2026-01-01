@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -65,17 +65,44 @@ interface CommissioningSummary {
 const monthColumns = ['apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec', 'jan', 'feb', 'mar'];
 const monthLabels = ['Apr-25', 'May-25', 'Jun-25', 'Jul-25', 'Aug-25', 'Sep-25', 'Oct-25', 'Nov-25', 'Dec-25', 'Jan-26', 'Feb-26', 'Mar-26'];
 
-// Section display name mapping
+// Section display name mapping with inclusion/exclusion info
 const sectionDisplayNames: Record<string, string> = {
   'A': 'A. Khavda Solar Projects',
   'B': 'B. Rajasthan Solar Projects',
-  'C': 'C. Rajasthan Solar Projects (Additional to Chairman Plan – 500 MW)',
-  'D1': 'D1. Khavda Solar (Copper + Merchant – 50 MW)',
-  'D2': 'D2. Khavda Solar (Additional for Internal – 650 MW)'
+  'C': 'C. Rajasthan Solar Additional 500MW',
+  'D1': 'D1. Khavda Solar Copper + Merchant 50MW',
+  'D2': 'D2. Khavda Solar Internal 650MW'
+};
+
+// Section inclusion/exclusion rules for calculations
+const SECTION_INCLUSION_RULES: Record<string, boolean> = {
+  'A. Khavda Solar Projects': true,
+  'B. Rajasthan Solar Projects': true,
+  'C. Rajasthan Solar Additional 500MW': true,
+  'A. Khavda Wind Projects': true,
+  'C. Mundra Wind 76MW': true,
+  'D1. Khavda Solar Copper + Merchant 50MW': false,
+  'D2. Khavda Solar Internal 650MW': false,
+  'B. Khavda Wind Internal 421MW': false,
+  'D. Mundra Wind Internal 224.4MW': false,
 };
 
 const getSectionDisplayName = (section: string): string => {
   return sectionDisplayNames[section] || `Section ${section}`;
+};
+
+// Hierarchy Definition
+const HIERARCHY = {
+  SOLAR: {
+    title: 'AGEL Overall Solar FY 2025–26 (A + B + C)',
+    key: 'Solar',
+    sections: ['A', 'B', 'C', 'D1', 'D2']
+  },
+  WIND: {
+    title: 'AGEL Overall Wind FY 2025–26 (A + C)',
+    key: 'Wind',
+    sections: ['A', 'C', 'D', 'B'] // Including B just in case it appears in Wind
+  }
 };
 
 export default function CommissioningStatusPage() {
@@ -83,12 +110,12 @@ export default function CommissioningStatusPage() {
   const { user, isAdmin, logout } = useAuth();
   const [fiscalYear] = useState('FY_25-26');
   const [activeTab, setActiveTab] = useState<'overview' | 'solar' | 'wind'>('overview');
-  
+
   // Filter states
   const [filters, setFilters] = useState({
     category: '',
     projectType: '',
-    planActual: 'Actual',
+    planActual: 'Plan',  // Default to Plan view
     spv: '',
     section: '',
     showExcluded: true, // Show items excluded from totals
@@ -102,9 +129,14 @@ export default function CommissioningStatusPage() {
 
   // Fetch projects
   const { data: projects = [], isLoading: projectsLoading } = useQuery({
-    queryKey: ['commissioning-projects', fiscalYear],
+    queryKey: ['commissioning-projects', fiscalYear, filters.planActual],
     queryFn: async () => {
-      const response = await fetch(`/api/commissioning-projects?fiscalYear=${fiscalYear}`);
+      const params = new URLSearchParams();
+      params.append('fiscalYear', fiscalYear);
+      if (filters.planActual) {
+        params.append('plan_actual', filters.planActual);
+      }
+      const response = await fetch(`/api/commissioning-projects?${params}`);
       if (!response.ok) throw new Error('Failed to fetch projects');
       return response.json();
     },
@@ -113,9 +145,14 @@ export default function CommissioningStatusPage() {
 
   // Fetch summaries
   const { data: summaries = [], isLoading: summariesLoading } = useQuery({
-    queryKey: ['commissioning-summaries', fiscalYear],
+    queryKey: ['commissioning-summaries', fiscalYear, filters.planActual],
     queryFn: async () => {
-      const response = await fetch(`/api/commissioning-summaries?fiscalYear=${fiscalYear}`);
+      const params = new URLSearchParams();
+      params.append('fiscalYear', fiscalYear);
+      if (filters.planActual) {
+        params.append('plan_actual', filters.planActual);
+      }
+      const response = await fetch(`/api/commissioning-summaries?${params}`);
       if (!response.ok) throw new Error('Failed to fetch summaries');
       return response.json();
     },
@@ -144,12 +181,12 @@ export default function CommissioningStatusPage() {
     const projectTypes = [...new Set(projects.map((p: CommissioningProject) => p.projectType))] as string[];
     const planActuals = [...new Set(projects.map((p: CommissioningProject) => p.planActual))] as string[];
     const spvs = [...new Set(projects.map((p: CommissioningProject) => p.spv))] as string[];
-    
+
     // Get unique sections and sort in proper order (A, B, C, D1, D2)
     const sectionsSet = new Set(projects.map((p: CommissioningProject) => p.section));
     const sectionOrder = ['A', 'B', 'C', 'D1', 'D2'];
     const sections = sectionOrder.filter(s => sectionsSet.has(s));
-    
+
     return { categories, projectTypes, planActuals, spvs, sections };
   }, [projects]);
 
@@ -165,46 +202,52 @@ export default function CommissioningStatusPage() {
     });
   }, [projects, filters]);
 
-  // Filter projects by tab
+  // Filter projects by tab - RESPECTS CAPACITY TYPE EXCLUSIVITY FROM BACKEND
   const tabProjects = useMemo(() => {
     let filtered = filteredProjects;
     if (activeTab === 'solar') {
-      filtered = filteredProjects.filter((p: CommissioningProject) => 
+      filtered = filteredProjects.filter((p: CommissioningProject) =>
         p.category.toLowerCase().includes('solar')
       );
     } else if (activeTab === 'wind') {
-      filtered = filteredProjects.filter((p: CommissioningProject) => 
+      filtered = filteredProjects.filter((p: CommissioningProject) =>
         p.category.toLowerCase().includes('wind')
       );
     }
-    
-    // Filter based on showExcluded toggle
+
+    // Backend already filtered by planActual, so capacity type is exclusive
+    // Apply showExcluded toggle to respect section inclusion/exclusion
     if (!filters.showExcluded) {
       filtered = filtered.filter((p: CommissioningProject) => p.includedInTotal);
     }
-    
+
     return filtered;
   }, [filteredProjects, activeTab, filters.showExcluded]);
 
   // Group projects by category and section
   const groupedProjects = useMemo(() => {
-    const groups: Record<string, Record<string, CommissioningProject[]>> = {};
-    
-    tabProjects.forEach((project: CommissioningProject) => {
-      if (!groups[project.category]) {
-        groups[project.category] = {};
-      }
-      if (!groups[project.category][project.section]) {
-        groups[project.category][project.section] = [];
-      }
-      groups[project.category][project.section].push(project);
-    });
-    
-    return groups;
+    // Instead of dynamic categories, we force bucket into Solar and Wind based on the hierarchy
+    const solarProjects = tabProjects.filter((p: CommissioningProject) => p.category.toLowerCase().includes('solar'));
+    const windProjects = tabProjects.filter((p: CommissioningProject) => p.category.toLowerCase().includes('wind'));
+
+    // Further group by section
+    const bySection = (projs: CommissioningProject[]) => {
+      const groups: Record<string, CommissioningProject[]> = {};
+      projs.forEach(p => {
+        if (!groups[p.section]) groups[p.section] = [];
+        groups[p.section].push(p);
+      });
+      return groups;
+    };
+
+    return {
+      Solar: bySection(solarProjects),
+      Wind: bySection(windProjects)
+    };
   }, [tabProjects]);
 
-  // Calculate totals for a group of projects
-  const calculateTotals = (projects: CommissioningProject[]) => {
+  // Calculate totals for a group of projects - ENFORCES RULES
+  const calculateTotals = (projectsToSum: CommissioningProject[]) => {
     const totals: any = {
       capacity: 0,
       apr: 0, may: 0, jun: 0, jul: 0, aug: 0, sep: 0,
@@ -212,12 +255,16 @@ export default function CommissioningStatusPage() {
       totalCapacity: 0, cummTillOct: 0,
       q1: 0, q2: 0, q3: 0, q4: 0
     };
-    
-    projects.forEach(p => {
+
+    projectsToSum.forEach(p => {
+      // CRITICAL: Only include projects marked as included_in_total
+      if (!p.includedInTotal) return;
+
       totals.capacity += p.capacity || 0;
       monthColumns.forEach(month => {
         totals[month] += (p as any)[month] || 0;
       });
+      // Backend already provides deterministic derived values
       totals.totalCapacity += p.totalCapacity || 0;
       totals.cummTillOct += p.cummTillOct || 0;
       totals.q1 += p.q1 || 0;
@@ -225,35 +272,31 @@ export default function CommissioningStatusPage() {
       totals.q3 += p.q3 || 0;
       totals.q4 += p.q4 || 0;
     });
-    
+
     return totals;
   };
 
-  // Calculate hierarchical totals based on includedInTotal flag AND planActual filter
+  // Calculate hierarchical totals - ENFORCES CAPACITY TYPE EXCLUSIVITY
   const calculateHierarchicalTotals = () => {
-    // Filter by planActual first if selected
-    let filteredProjects = projects.filter((p: CommissioningProject) => p.includedInTotal);
-    
-    // Apply planActual filter if set
-    if (filters.planActual) {
-      filteredProjects = filteredProjects.filter((p: CommissioningProject) => p.planActual === filters.planActual);
-    }
-    
-    const solarProjects = filteredProjects.filter((p: CommissioningProject) => 
+    // Backend already filters by planActual, so projects here are already capacity-type exclusive
+    // Filter to only included projects
+    const includedProjects = projects.filter((p: CommissioningProject) => p.includedInTotal);
+
+    const solarProjects = includedProjects.filter((p: CommissioningProject) =>
       p.category.toLowerCase().includes('solar')
     );
-    const windProjects = filteredProjects.filter((p: CommissioningProject) => 
+    const windProjects = includedProjects.filter((p: CommissioningProject) =>
       p.category.toLowerCase().includes('wind')
     );
-    
+
     return {
       solar: calculateTotals(solarProjects),
       wind: calculateTotals(windProjects),
-      total: calculateTotals(filteredProjects)
+      total: calculateTotals(includedProjects)
     };
   };
 
-  const hierarchicalTotals = useMemo(() => calculateHierarchicalTotals(), [projects, filters.planActual]);
+  const hierarchicalTotals = useMemo(() => calculateHierarchicalTotals(), [projects]);
 
   // Handle filter change
   const handleFilterChange = (key: string, value: string | boolean) => {
@@ -262,7 +305,7 @@ export default function CommissioningStatusPage() {
 
   // Clear all filters
   const clearFilters = () => {
-    setFilters({ category: '', projectType: '', planActual: 'Actual', spv: '', section: '', showExcluded: true });
+    setFilters({ category: '', projectType: '', planActual: 'Plan', spv: '', section: '', showExcluded: true });
   };
 
   // Handle edit project
@@ -277,11 +320,11 @@ export default function CommissioningStatusPage() {
   // Handle save edit
   const handleSaveEdit = () => {
     if (!editingProject) return;
-    
-    const updatedProjects = projects.map((p: CommissioningProject) => 
+
+    const updatedProjects = projects.map((p: CommissioningProject) =>
       p.id === editingProject.id ? editingProject : p
     );
-    
+
     saveProjectsMutation.mutate(updatedProjects);
     setEditingProject(null);
   };
@@ -292,9 +335,9 @@ export default function CommissioningStatusPage() {
       alert('Only admin users can delete projects.');
       return;
     }
-    
+
     if (!confirm('Are you sure you want to delete this project?')) return;
-    
+
     const updatedProjects = projects.filter((p: CommissioningProject) => p.id !== projectId);
     saveProjectsMutation.mutate(updatedProjects);
   };
@@ -312,14 +355,14 @@ export default function CommissioningStatusPage() {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('fiscalYear', fiscalYear);
-      
+
       const response = await fetch('/api/upload-commissioning-data', {
         method: 'POST',
         body: formData,
       });
-      
+
       const data = await response.json();
-      
+
       if (!response.ok) {
         setUploadResult({
           failed: data.failed || 0,
@@ -368,11 +411,10 @@ export default function CommissioningStatusPage() {
         </div>
         <div className="flex items-center gap-2">
           {user && (
-            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-              isAdmin 
-                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' 
-                : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
-            }`}>
+            <span className={`px-3 py-1 rounded-full text-xs font-medium ${isAdmin
+              ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+              : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+              }`}>
               {isAdmin ? 'Admin' : 'Viewer'}
             </span>
           )}
@@ -386,29 +428,62 @@ export default function CommissioningStatusPage() {
             <button
               key={tab}
               onClick={() => setActiveTab(tab as any)}
-              className={`py-2 px-4 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === tab
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-              }`}
+              className={`py-2 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === tab
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                }`}
             >
               {tab === 'overview' ? 'Overall Summary' : tab === 'solar' ? 'Solar Projects' : 'Wind Projects'}
             </button>
           ))}
         </nav>
-        
-        {/* Upload Excel Button - Admin Only */}
-        {isAdmin && (
-          <button
-            onClick={() => setShowUploadModal(true)}
-            className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-500 dark:hover:border-blue-400 transition-colors"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M3 17a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zm6-7a3 3 0 11-6 0 3 3 0 016 0zm4-5a1 1 0 11-2 0 1 1 0 012 0zm-1.464 3.536a1 1 0 001.414-1.414L9.172 6.05a1 1 0 10-1.414 1.414l2.121 2.122zM2.464 14.536a1 1 0 001.414 1.414l2.121-2.122a1 1 0 10-1.414-1.414l-2.121 2.122zm13.071-7.071a1 1 0 10-1.414-1.414l-2.121 2.121a1 1 0 101.414 1.414l2.121-2.121zM10 4a1 1 0 011-1h4a1 1 0 110 2h-4a1 1 0 01-1-1z" />
-            </svg>
-            Upload Excel
-          </button>
-        )}
+
+        <div className="flex items-center gap-3">
+          {/* Upload Excel Button - Admin Only */}
+          {isAdmin && (
+            <button
+              onClick={() => setShowUploadModal(true)}
+              className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-500 dark:hover:border-blue-400 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M3 17a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zm6-7a3 3 0 11-6 0 3 3 0 016 0zm4-5a1 1 0 11-2 0 1 1 0 012 0zm-1.464 3.536a1 1 0 001.414-1.414L9.172 6.05a1 1 0 10-1.414 1.414l2.121 2.122zM2.464 14.536a1 1 0 001.414 1.414l2.121-2.122a1 1 0 10-1.414-1.414l-2.121 2.122zm13.071-7.071a1 1 0 10-1.414-1.414l-2.121 2.121a1 1 0 101.414 1.414l2.121-2.121zM10 4a1 1 0 011-1h4a1 1 0 110 2h-4a1 1 0 01-1-1z" />
+              </svg>
+              Upload Excel
+            </button>
+          )}
+
+          {/* Reset Data Button - Admin Only */}
+          {isAdmin && (
+            <button
+              onClick={async () => {
+                if (confirm('Are you sure you want to RESET all commissioning data? This will clear all monthly values and cannot be undone.')) {
+                  try {
+                    const res = await fetch('/api/reset-commissioning-data', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ fiscalYear })
+                    });
+                    if (res.ok) {
+                      alert('Data reset successfully.');
+                      queryClient.invalidateQueries({ queryKey: ['commissioning-projects', fiscalYear] });
+                    } else {
+                      alert('Failed to reset data.');
+                    }
+                  } catch (e) {
+                    alert('Error resetting data.');
+                  }
+                }
+              }}
+              className="flex items-center gap-2 px-4 py-2 text-sm border border-red-300 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              title="Clear all uploaded data"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Reset Data
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filters */}
@@ -503,7 +578,7 @@ export default function CommissioningStatusPage() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
             <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Capacity (Included)</h3>
-            <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{formatNumber(hierarchicalTotals.total.capacity)} MW</p>
+            <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{formatNumber(hierarchicalTotals.total.totalCapacity)} MW</p>
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
             <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Cumm till Oct-25</h3>
@@ -511,14 +586,67 @@ export default function CommissioningStatusPage() {
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
             <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Solar Capacity</h3>
-            <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{formatNumber(hierarchicalTotals.solar.capacity)} MW</p>
+            <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{formatNumber(hierarchicalTotals.solar.totalCapacity)} MW</p>
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
             <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Wind Capacity</h3>
-            <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{formatNumber(hierarchicalTotals.wind.capacity)} MW</p>
+            <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{formatNumber(hierarchicalTotals.wind.totalCapacity)} MW</p>
           </div>
         </div>
       )}
+
+      {/* PDF-Style Summary Tables */}
+      {activeTab === 'overview' && (
+        <div className="space-y-6">
+          {/* AGEL Overall Solar Summary */}
+          <SummaryTable
+            title="1. AGEL Overall Solar FY 2025-26 (A + B + C)"
+            projects={projects.filter((p: CommissioningProject) =>
+              p.category.toLowerCase().includes('solar') && p.includedInTotal
+            )}
+            monthColumns={monthColumns}
+            monthLabels={monthLabels}
+            formatNumber={formatNumber}
+          />
+
+          {/* AGEL Overall Wind Summary */}
+          <SummaryTable
+            title="2. AGEL Overall Wind FY 2025-26 (A + C)"
+            projects={projects.filter((p: CommissioningProject) =>
+              p.category.toLowerCase().includes('wind') && p.includedInTotal
+            )}
+            monthColumns={monthColumns}
+            monthLabels={monthLabels}
+            formatNumber={formatNumber}
+          />
+
+          {/* AGEL Overall FY Summary (Solar + Wind) */}
+          <SummaryTable
+            title="AGEL Overall FY 2025-26 (1 + 2)"
+            projects={projects.filter((p: CommissioningProject) => p.includedInTotal)}
+            monthColumns={monthColumns}
+            monthLabels={monthLabels}
+            formatNumber={formatNumber}
+          />
+        </div>
+      )}
+
+      {/* Hierarchy Breadcrumb */}
+      <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-sm text-blue-800 dark:text-blue-300 font-medium">
+        <span>AGEL Overall FY 2025–26</span>
+        {filters.category && (
+          <>
+            <span className="mx-2">→</span>
+            <span>{filters.category.includes('Solar') ? 'Solar' : filters.category.includes('Wind') ? 'Wind' : filters.category}</span>
+          </>
+        )}
+        {filters.section && (
+          <>
+            <span className="mx-2">→</span>
+            <span>Section {filters.section}</span>
+          </>
+        )}
+      </div>
 
       {/* Projects Table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
@@ -530,7 +658,7 @@ export default function CommissioningStatusPage() {
             Showing {tabProjects.length} project(s)
           </span>
         </div>
-        
+
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-900">
@@ -562,166 +690,178 @@ export default function CommissioningStatusPage() {
                   </td>
                 </tr>
               ) : (
-                Object.entries(groupedProjects).map(([category, sections]) => (
-                  <>
-                    {/* Category Header */}
-                    <tr key={`cat-${category}`} className="bg-blue-50 dark:bg-blue-900/20">
-                      <td colSpan={21} className="px-3 py-2 text-sm font-bold text-blue-900 dark:text-blue-300">
-                        {category}
-                      </td>
-                    </tr>
-                    
-                    {/* Sections within category */}
-                    {Object.entries(sections).map(([section, sectionProjects]) => {
-                      const sectionTotal = calculateTotals(sectionProjects);
-                      return (
-                        <>
-                          {/* Section Header */}
-                          {Object.keys(sections).length > 1 && (
-                            <tr key={`sec-${category}-${section}`} className="bg-gray-100 dark:bg-gray-700">
-                              <td colSpan={21} className="px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                (['Solar', 'Wind'] as const).map(groupKey => {
+                  const groupConfig = groupKey === 'Solar' ? HIERARCHY.SOLAR : HIERARCHY.WIND;
+                  const projectsBySection = groupedProjects[groupKey];
+
+                  // Only render group if there are projects or if we're in overview/respective tab
+                  const hasProjects = Object.values(projectsBySection).some(arr => arr.length > 0);
+                  if (!hasProjects) return null;
+
+                  // Calculate group totals (Solar/Wind Total)
+                  const allGroupProjects = Object.values(projectsBySection).flat();
+                  const groupTotal = calculateTotals(allGroupProjects);
+
+                  return (
+                    <React.Fragment key={`group-${groupKey}`}>
+                      {/* Major Group Header (e.g. Overall Solar) */}
+                      <tr className="bg-amber-100 dark:bg-amber-900/30 border-y-2 border-amber-200 dark:border-amber-800">
+                        <td colSpan={21} className="px-4 py-3 text-base font-bold text-amber-900 dark:text-amber-100 uppercase tracking-wide">
+                          {groupConfig.title}
+                        </td>
+                      </tr>
+
+                      {/* Iterate Sections in predefined order */}
+                      {groupConfig.sections.map(section => {
+                        const sectionProjects = projectsBySection[section] || [];
+                        if (sectionProjects.length === 0) return null;
+
+                        const sectionTotal = calculateTotals(sectionProjects);
+                        const isExcludedSection = !SECTION_INCLUSION_RULES[getSectionDisplayName(section)]; // Simple check based on section map assumption or project flag
+                        // Actually, trusting project's includedInTotal is safer, but user layout implies sections like D1/D2 are fixed excluded
+                        const anyIncluded = sectionProjects.some(p => p.includedInTotal);
+
+                        return (
+                          <React.Fragment key={`sec-${groupKey}-${section}`}>
+                            {/* Section Header */}
+                            <tr className="bg-gray-100 dark:bg-gray-700/50">
+                              <td colSpan={21} className="px-4 py-2 text-sm font-bold text-gray-800 dark:text-gray-200">
                                 {getSectionDisplayName(section)}
-                                {!sectionProjects[0]?.includedInTotal && (
-                                  <span className="ml-2 px-2 py-0.5 text-xs bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400 rounded">
-                                    Excluded from Total
+                                {!anyIncluded && (
+                                  <span className="ml-3 px-2 py-0.5 text-xs bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-300 rounded border border-gray-300 dark:border-gray-500 uppercase tracking-wider">
+                                    Excluded (Display Only)
+                                  </span>
+                                )}
+                                {anyIncluded && (
+                                  <span className="ml-3 px-2 py-0.5 text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 rounded border border-green-200 dark:border-green-800 uppercase tracking-wider">
+                                    Included
                                   </span>
                                 )}
                               </td>
                             </tr>
-                          )}
-                          
-                          {/* Projects in section */}
-                          {sectionProjects.map((project: CommissioningProject, index: number) => (
-                            <tr 
-                              key={project.id || `${category}-${section}-${index}`}
-                              className={`${
-                                !project.includedInTotal 
-                                  ? 'bg-orange-50/50 dark:bg-orange-900/10 opacity-75' 
-                                  : index % 2 === 0 
-                                    ? 'bg-white dark:bg-gray-800' 
-                                    : 'bg-gray-50 dark:bg-gray-900'
-                              }`}
-                            >
-                              <td className="sticky left-0 z-10 bg-inherit px-3 py-2 text-sm text-gray-900 dark:text-white">
-                                {project.sno}
-                                {!project.includedInTotal && (
-                                  <span className="ml-1 text-orange-500" title="Excluded from totals">*</span>
+
+                            {/* Projects */}
+                            {sectionProjects.map((project, idx) => (
+                              <tr
+                                key={project.id || `${groupKey}-${section}-${idx}`}
+                                className={`
+                                  ${!project.includedInTotal ? 'bg-gray-50 text-gray-500' : 'bg-white text-gray-900'}
+                                  dark:bg-gray-800 dark:text-gray-100
+                                  border-b border-gray-100 dark:border-gray-700
+                                `}
+                              >
+                                <td className="sticky left-0 z-10 bg-inherit px-3 py-2 text-sm">
+                                  {project.sno}
+                                </td>
+                                <td className="px-3 py-2 text-sm whitespace-nowrap">{project.projectName}</td>
+                                <td className="px-3 py-2 text-sm">{project.spv}</td>
+                                <td className="px-3 py-2 text-sm">
+                                  {/* Type Badges */}
+                                  <span className={`px-2 py-1 rounded text-xs font-medium ${project.projectType === 'PPA' ? 'bg-blue-100 text-blue-800' :
+                                    project.projectType === 'Merchant' ? 'bg-green-100 text-green-800' :
+                                      'bg-purple-100 text-purple-800'
+                                    }`}>
+                                    {project.projectType}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-sm">{project.plotLocation}</td>
+                                {/* Highlighting Capacity and Total for visual scan */}
+                                <td className="px-3 py-2 text-sm font-semibold">{formatNumber(project.capacity)}</td>
+                                <td className="px-3 py-2 text-sm">
+                                  <span className={`px-2 py-1 rounded text-xs font-medium ${project.planActual === 'Plan' ? 'bg-gray-100 text-gray-800' :
+                                    project.planActual === 'Rephase' ? 'bg-yellow-100 text-yellow-800' :
+                                      'bg-green-100 text-green-800'
+                                    }`}>
+                                    {project.planActual === 'Actual' ? 'Actual / Fcst' : project.planActual}
+                                  </span>
+                                </td>
+                                {monthColumns.map(m => (
+                                  <td key={m} className={`px-2 py-2 text-sm text-center ${!project.includedInTotal ? 'opacity-50' : ''}`}>
+                                    {formatNumber((project as any)[m])}
+                                  </td>
+                                ))}
+                                <td className="px-3 py-2 text-sm text-center font-bold bg-gray-50 dark:bg-gray-900/50">{formatNumber(project.totalCapacity)}</td>
+                                <td className="px-3 py-2 text-sm text-center font-semibold text-blue-600 dark:text-blue-400">{formatNumber(project.cummTillOct)}</td>
+                                {/* Quarters */}
+                                <td className="px-3 py-2 text-sm text-center">{formatNumber(project.q1)}</td>
+                                <td className="px-3 py-2 text-sm text-center">{formatNumber(project.q2)}</td>
+                                <td className="px-3 py-2 text-sm text-center">{formatNumber(project.q3)}</td>
+                                <td className="px-3 py-2 text-sm text-center">{formatNumber(project.q4)}</td>
+
+                                {isAdmin && (
+                                  <td className="px-3 py-2 text-sm text-center">
+                                    <div className="flex gap-1 justify-center">
+                                      <button onClick={() => handleEditProject(project)} className="text-blue-600 hover:underline">Edit</button>
+                                      <button onClick={() => handleDeleteProject(project.id!)} className="text-red-600 hover:underline ml-2">Del</button>
+                                    </div>
+                                  </td>
                                 )}
-                              </td>
-                              <td className="px-3 py-2 text-sm text-gray-900 dark:text-white whitespace-nowrap">{project.projectName}</td>
-                              <td className="px-3 py-2 text-sm text-gray-600 dark:text-gray-300">{project.spv}</td>
-                              <td className="px-3 py-2 text-sm">
-                                <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                  project.projectType === 'PPA' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
-                                  project.projectType === 'Merchant' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
-                                  'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400'
-                                }`}>
-                                  {project.projectType}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 text-sm text-gray-600 dark:text-gray-300">{project.plotLocation}</td>
-                              <td className="px-3 py-2 text-sm text-gray-900 dark:text-white font-medium">{formatNumber(project.capacity)}</td>
-                              <td className="px-3 py-2 text-sm">
-                                <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                  project.planActual === 'Plan' ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300' :
-                                  project.planActual === 'Rephase' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :
-                                  'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                                }`}>
-                                  {project.planActual === 'Actual' ? 'Actual / Fcst' : project.planActual}
-                                </span>
-                              </td>
-                              {monthColumns.map((month) => (
-                                <td key={month} className="px-2 py-2 text-sm text-center text-gray-600 dark:text-gray-300">
-                                  {formatNumber((project as any)[month])}
-                                </td>
-                              ))}
-                              <td className="px-3 py-2 text-sm text-center font-medium text-gray-900 dark:text-white">{formatNumber(project.totalCapacity)}</td>
-                              <td className="px-3 py-2 text-sm text-center font-medium text-blue-600 dark:text-blue-400">{formatNumber(project.cummTillOct)}</td>
-                              <td className="px-3 py-2 text-sm text-center text-gray-600 dark:text-gray-300">{formatNumber(project.q1)}</td>
-                              <td className="px-3 py-2 text-sm text-center text-gray-600 dark:text-gray-300">{formatNumber(project.q2)}</td>
-                              <td className="px-3 py-2 text-sm text-center text-gray-600 dark:text-gray-300">{formatNumber(project.q3)}</td>
-                              <td className="px-3 py-2 text-sm text-center text-gray-600 dark:text-gray-300">{formatNumber(project.q4)}</td>
-                              {isAdmin && (
-                                <td className="px-3 py-2 text-sm text-center">
-                                  <div className="flex gap-1 justify-center">
-                                    <button
-                                      onClick={() => handleEditProject(project)}
-                                      className="p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                                      title="Edit"
-                                    >
-                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                                      </svg>
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteProject(project.id!)}
-                                      className="p-1 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                                      title="Delete"
-                                    >
-                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                                      </svg>
-                                    </button>
-                                  </div>
-                                </td>
-                              )}
-                            </tr>
-                          ))}
-                          
-                          {/* Section Subtotal */}
-                          {sectionProjects.length > 1 && (
-                            <tr className="bg-gray-200 dark:bg-gray-700 font-semibold">
-                              <td colSpan={5} className="px-3 py-2 text-sm text-right text-gray-900 dark:text-white">
-                                Section {section} Subtotal:
-                              </td>
-                              <td className="px-3 py-2 text-sm text-gray-900 dark:text-white">{formatNumber(sectionTotal.capacity)}</td>
-                              <td className="px-3 py-2"></td>
-                              {monthColumns.map((month) => (
-                                <td key={month} className="px-2 py-2 text-sm text-center text-gray-900 dark:text-white">
-                                  {formatNumber(sectionTotal[month])}
-                                </td>
-                              ))}
-                              <td className="px-3 py-2 text-sm text-center text-gray-900 dark:text-white">{formatNumber(sectionTotal.totalCapacity)}</td>
-                              <td className="px-3 py-2 text-sm text-center font-bold text-blue-600 dark:text-blue-400">{formatNumber(sectionTotal.cummTillOct)}</td>
-                              <td className="px-3 py-2 text-sm text-center text-gray-900 dark:text-white">{formatNumber(sectionTotal.q1)}</td>
-                              <td className="px-3 py-2 text-sm text-center text-gray-900 dark:text-white">{formatNumber(sectionTotal.q2)}</td>
-                              <td className="px-3 py-2 text-sm text-center text-gray-900 dark:text-white">{formatNumber(sectionTotal.q3)}</td>
-                              <td className="px-3 py-2 text-sm text-center text-gray-900 dark:text-white">{formatNumber(sectionTotal.q4)}</td>
-                              {isAdmin && <td></td>}
-                            </tr>
-                          )}
-                        </>
-                      );
-                    })}
-                    
-                    {/* Category Total */}
-                    {(() => {
-                      const categoryProjects = Object.values(sections).flat();
-                      const categoryTotal = calculateTotals(categoryProjects);
-                      return (
-                        <tr className="bg-blue-100 dark:bg-blue-900/40 font-bold">
-                          <td colSpan={5} className="px-3 py-2.5 text-sm text-right text-blue-900 dark:text-blue-200">
-                            {category} Total:
-                          </td>
-                          <td className="px-3 py-2.5 text-sm text-blue-900 dark:text-blue-200">{formatNumber(categoryTotal.capacity)}</td>
-                          <td className="px-3 py-2.5"></td>
-                          {monthColumns.map((month) => (
-                            <td key={month} className="px-2 py-2.5 text-sm text-center text-blue-900 dark:text-blue-200">
-                              {formatNumber(categoryTotal[month])}
-                            </td>
-                          ))}
-                          <td className="px-3 py-2.5 text-sm text-center text-blue-900 dark:text-blue-200">{formatNumber(categoryTotal.totalCapacity)}</td>
-                          <td className="px-3 py-2.5 text-sm text-center font-bold text-blue-700 dark:text-blue-300">{formatNumber(categoryTotal.cummTillOct)}</td>
-                          <td className="px-3 py-2.5 text-sm text-center text-blue-900 dark:text-blue-200">{formatNumber(categoryTotal.q1)}</td>
-                          <td className="px-3 py-2.5 text-sm text-center text-blue-900 dark:text-blue-200">{formatNumber(categoryTotal.q2)}</td>
-                          <td className="px-3 py-2.5 text-sm text-center text-blue-900 dark:text-blue-200">{formatNumber(categoryTotal.q3)}</td>
-                          <td className="px-3 py-2.5 text-sm text-center text-blue-900 dark:text-blue-200">{formatNumber(categoryTotal.q4)}</td>
-                          {isAdmin && <td></td>}
-                        </tr>
-                      );
-                    })()}
-                  </>
-                ))
+                              </tr>
+                            ))}
+
+                            {/* SECTION SUB-TOTAL */}
+                            {anyIncluded && (
+                              <tr className="bg-gray-100 dark:bg-gray-700 border-t border-gray-300 dark:border-gray-600 font-semibold text-sm">
+                                <td colSpan={5} className="px-3 py-2 text-right">Section {section} Subtotal:</td>
+                                <td className="px-3 py-2">{formatNumber(sectionTotal.capacity)}</td>
+                                <td></td>
+                                {monthColumns.map(m => <td key={m} className="px-2 py-2 text-center">{formatNumber(sectionTotal[m])}</td>)}
+                                <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.totalCapacity)}</td>
+                                <td className="px-3 py-2 text-center text-blue-700 dark:text-blue-300">{formatNumber(sectionTotal.cummTillOct)}</td>
+                                <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.q1)}</td>
+                                <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.q2)}</td>
+                                <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.q3)}</td>
+                                <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.q4)}</td>
+                                {isAdmin && <td></td>}
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+
+                      {/* GROUP TOTAL (Solar/Wind) */}
+                      <tr className="bg-amber-50 dark:bg-amber-900/20 border-t-2 border-amber-300 dark:border-amber-700 font-bold text-sm">
+                        <td colSpan={5} className="px-3 py-3 text-right text-amber-900 dark:text-amber-100 uppercase">
+                          Total {groupKey} (Included):
+                        </td>
+                        <td className="px-3 py-3">{formatNumber(groupTotal.capacity)}</td>
+                        <td></td>
+                        {monthColumns.map(m => <td key={m} className="px-2 py-3 text-center">{formatNumber(groupTotal[m])}</td>)}
+                        <td className="px-3 py-3 text-center">{formatNumber(groupTotal.totalCapacity)}</td>
+                        <td className="px-3 py-3 text-center text-blue-700 dark:text-blue-300">{formatNumber(groupTotal.cummTillOct)}</td>
+                        <td className="px-3 py-3 text-center">{formatNumber(groupTotal.q1)}</td>
+                        <td className="px-3 py-3 text-center">{formatNumber(groupTotal.q2)}</td>
+                        <td className="px-3 py-3 text-center">{formatNumber(groupTotal.q3)}</td>
+                        <td className="px-3 py-3 text-center">{formatNumber(groupTotal.q4)}</td>
+                        {isAdmin && <td></td>}
+                      </tr>
+                    </React.Fragment>
+                  );
+                })
+              )}
+
+              {/* GRAND TOTAL ROW */}
+              {(tabProjects.length > 0) && (
+                (() => {
+                  const grandTotal = calculateTotals(tabProjects.filter((p: { includedInTotal: any; }) => p.includedInTotal));
+                  return (
+                    <tr className="bg-gray-800 text-white border-t-4 border-gray-900 font-bold text-base shadow-lg">
+                      <td colSpan={5} className="px-3 py-4 text-right uppercase tracking-wider">
+                        AGEL Overall FY 2025–26 Total:
+                      </td>
+                      <td className="px-3 py-4">{formatNumber(grandTotal.capacity)}</td>
+                      <td></td>
+                      {monthColumns.map(m => <td key={m} className="px-2 py-4 text-center">{formatNumber(grandTotal[m])}</td>)}
+                      <td className="px-3 py-4 text-center">{formatNumber(grandTotal.totalCapacity)}</td>
+                      <td className="px-3 py-4 text-center text-blue-300">{formatNumber(grandTotal.cummTillOct)}</td>
+                      <td className="px-3 py-4 text-center">{formatNumber(grandTotal.q1)}</td>
+                      <td className="px-3 py-4 text-center">{formatNumber(grandTotal.q2)}</td>
+                      <td className="px-3 py-4 text-center">{formatNumber(grandTotal.q3)}</td>
+                      <td className="px-3 py-4 text-center">{formatNumber(grandTotal.q4)}</td>
+                      {isAdmin && <td></td>}
+                    </tr>
+                  );
+                })()
               )}
             </tbody>
           </table>
@@ -824,7 +964,7 @@ export default function CommissioningStatusPage() {
                 Excel must follow the approved AGEL commissioning template.
               </p>
             </div>
-            
+
             <div className="p-6 space-y-4">
               {!uploadResult ? (
                 <>
@@ -856,7 +996,7 @@ export default function CommissioningStatusPage() {
                       <p className="text-xs text-gray-500 dark:text-gray-400">(.xlsx files only)</p>
                     </label>
                   </div>
-                  
+
                   <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-xs text-gray-700 dark:text-gray-300">
                     <strong>Expected columns:</strong> Category, Section, Project Name, SPV, Type, Capacity Type, Apr-25, May-25, ... Mar-26
                   </div>
@@ -870,7 +1010,7 @@ export default function CommissioningStatusPage() {
                       </p>
                     </div>
                   ) : null}
-                  
+
                   {uploadResult && uploadResult.failed != null && uploadResult.failed > 0 && (
                     <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg">
                       <p className="text-sm font-medium text-orange-800 dark:text-orange-400">
@@ -889,7 +1029,7 @@ export default function CommissioningStatusPage() {
                 </div>
               )}
             </div>
-            
+
             <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
               <button
                 onClick={() => {
@@ -905,6 +1045,133 @@ export default function CommissioningStatusPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Summary Table Component - Matches PDF format
+interface SummaryTableProps {
+  title: string;
+  projects: CommissioningProject[];
+  monthColumns: string[];
+  monthLabels: string[];
+  formatNumber: (value: number | null | undefined) => string;
+}
+
+function SummaryTable({ title, projects, monthColumns, monthLabels, formatNumber }: SummaryTableProps) {
+  // Group projects by planActual and projectType
+  const aggregateByType = (projs: CommissioningProject[], planActual: string) => {
+    const filtered = projs.filter(p => p.planActual === planActual);
+
+    const types = ['PPA', 'Merchant', 'Group'];
+    const byType: Record<string, any> = {};
+
+    types.forEach(type => {
+      const typeProjs = filtered.filter(p => p.projectType === type);
+      if (typeProjs.length === 0) return;
+
+      byType[type] = {
+        apr: typeProjs.reduce((s, p) => s + (p.apr || 0), 0),
+        may: typeProjs.reduce((s, p) => s + (p.may || 0), 0),
+        jun: typeProjs.reduce((s, p) => s + (p.jun || 0), 0),
+        jul: typeProjs.reduce((s, p) => s + (p.jul || 0), 0),
+        aug: typeProjs.reduce((s, p) => s + (p.aug || 0), 0),
+        sep: typeProjs.reduce((s, p) => s + (p.sep || 0), 0),
+        oct: typeProjs.reduce((s, p) => s + (p.oct || 0), 0),
+        nov: typeProjs.reduce((s, p) => s + (p.nov || 0), 0),
+        dec: typeProjs.reduce((s, p) => s + (p.dec || 0), 0),
+        jan: typeProjs.reduce((s, p) => s + (p.jan || 0), 0),
+        feb: typeProjs.reduce((s, p) => s + (p.feb || 0), 0),
+        mar: typeProjs.reduce((s, p) => s + (p.mar || 0), 0),
+        totalCapacity: typeProjs.reduce((s, p) => s + (p.totalCapacity || 0), 0),
+        cummTillOct: typeProjs.reduce((s, p) => s + (p.cummTillOct || 0), 0),
+        q1: typeProjs.reduce((s, p) => s + (p.q1 || 0), 0),
+        q2: typeProjs.reduce((s, p) => s + (p.q2 || 0), 0),
+        q3: typeProjs.reduce((s, p) => s + (p.q3 || 0), 0),
+        q4: typeProjs.reduce((s, p) => s + (p.q4 || 0), 0),
+      };
+    });
+
+    // Calculate total for this planActual
+    const total = {
+      apr: filtered.reduce((s, p) => s + (p.apr || 0), 0),
+      may: filtered.reduce((s, p) => s + (p.may || 0), 0),
+      jun: filtered.reduce((s, p) => s + (p.jun || 0), 0),
+      jul: filtered.reduce((s, p) => s + (p.jul || 0), 0),
+      aug: filtered.reduce((s, p) => s + (p.aug || 0), 0),
+      sep: filtered.reduce((s, p) => s + (p.sep || 0), 0),
+      oct: filtered.reduce((s, p) => s + (p.oct || 0), 0),
+      nov: filtered.reduce((s, p) => s + (p.nov || 0), 0),
+      dec: filtered.reduce((s, p) => s + (p.dec || 0), 0),
+      jan: filtered.reduce((s, p) => s + (p.jan || 0), 0),
+      feb: filtered.reduce((s, p) => s + (p.feb || 0), 0),
+      mar: filtered.reduce((s, p) => s + (p.mar || 0), 0),
+      totalCapacity: filtered.reduce((s, p) => s + (p.totalCapacity || 0), 0),
+      cummTillOct: filtered.reduce((s, p) => s + (p.cummTillOct || 0), 0),
+      q1: filtered.reduce((s, p) => s + (p.q1 || 0), 0),
+      q2: filtered.reduce((s, p) => s + (p.q2 || 0), 0),
+      q3: filtered.reduce((s, p) => s + (p.q3 || 0), 0),
+      q4: filtered.reduce((s, p) => s + (p.q4 || 0), 0),
+    };
+
+    return { byType, total };
+  };
+
+  const planData = aggregateByType(projects, 'Plan');
+  const rephaseData = aggregateByType(projects, 'Rephase');
+  const actualData = aggregateByType(projects, 'Actual');
+
+  const renderRow = (label: string, data: any, bgClass: string = '') => (
+    <tr className={bgClass}>
+      <td className="px-2 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">{label}</td>
+      {monthColumns.map(m => (
+        <td key={m} className="px-1 py-1 text-xs text-center text-gray-600 dark:text-gray-400">{formatNumber(data[m])}</td>
+      ))}
+      <td className="px-1 py-1 text-xs text-center font-semibold text-gray-800 dark:text-gray-200">{formatNumber(data.totalCapacity)}</td>
+      <td className="px-1 py-1 text-xs text-center text-blue-600 dark:text-blue-400">{formatNumber(data.cummTillOct)}</td>
+      <td className="px-1 py-1 text-xs text-center text-gray-600 dark:text-gray-400">{formatNumber(data.q1)}</td>
+      <td className="px-1 py-1 text-xs text-center text-gray-600 dark:text-gray-400">{formatNumber(data.q2)}</td>
+      <td className="px-1 py-1 text-xs text-center text-gray-600 dark:text-gray-400">{formatNumber(data.q3)}</td>
+      <td className="px-1 py-1 text-xs text-center text-gray-600 dark:text-gray-400">{formatNumber(data.q4)}</td>
+    </tr>
+  );
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+      <div className="bg-purple-600 dark:bg-purple-800 px-4 py-2">
+        <h3 className="text-sm font-bold text-white">{title}</h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-xs">
+          <thead className="bg-purple-100 dark:bg-purple-900/50">
+            <tr>
+              <th className="px-2 py-2 text-left text-xs font-semibold text-purple-800 dark:text-purple-200">Plan / Actual</th>
+              {monthLabels.map((m, idx) => (
+                <th key={idx} className="px-1 py-2 text-center text-xs font-semibold text-purple-800 dark:text-purple-200">{m}</th>
+              ))}
+              <th className="px-1 py-2 text-center text-xs font-semibold text-purple-800 dark:text-purple-200">Total Capacity</th>
+              <th className="px-1 py-2 text-center text-xs font-semibold text-purple-800 dark:text-purple-200">Cumm till 31-Oct-25</th>
+              <th className="px-1 py-2 text-center text-xs font-semibold text-purple-800 dark:text-purple-200">Q1</th>
+              <th className="px-1 py-2 text-center text-xs font-semibold text-purple-800 dark:text-purple-200">Q2</th>
+              <th className="px-1 py-2 text-center text-xs font-semibold text-purple-800 dark:text-purple-200">Q3</th>
+              <th className="px-1 py-2 text-center text-xs font-semibold text-purple-800 dark:text-purple-200">Q4</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+            {/* Plan Section */}
+            {renderRow('Plan', planData.total, 'bg-gray-50 dark:bg-gray-700/30 font-semibold')}
+            {Object.entries(planData.byType).map(([type, data]) => renderRow(type, data))}
+
+            {/* Rephase Section */}
+            {renderRow('Rephase', rephaseData.total, 'bg-amber-50 dark:bg-amber-900/20 font-semibold')}
+            {Object.entries(rephaseData.byType).map(([type, data]) => renderRow(type, data))}
+
+            {/* Actual Section */}
+            {renderRow('Actual / Fcst', actualData.total, 'bg-green-50 dark:bg-green-900/20 font-semibold')}
+            {Object.entries(actualData.byType).map(([type, data]) => renderRow(type, data))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from 'react'    
+import React, { useState, useEffect } from 'react'
 import ShuffleHero from './login'
-import Cards from './cards'
+import Cards from '@/app/components/cards'
 
 const Demo = () => {
   const [theme, setTheme] = useState('light');
@@ -11,13 +11,13 @@ const Demo = () => {
     // Check system preference or saved theme
     const savedTheme = localStorage.getItem('theme');
     const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    
+
     if (savedTheme) {
       setTheme(savedTheme);
     } else if (systemPrefersDark) {
       setTheme('dark');
     }
-    
+
     // Apply theme to document
     if (theme === 'dark' || (!savedTheme && systemPrefersDark)) {
       document.documentElement.classList.add('dark');
@@ -28,7 +28,7 @@ const Demo = () => {
     const newTheme = theme === 'light' ? 'dark' : 'light';
     setTheme(newTheme);
     localStorage.setItem('theme', newTheme);
-    
+
     if (newTheme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
@@ -56,18 +56,18 @@ const Demo = () => {
           )}
         </button>
       </div>
-      
+
       <div className="w-full h-full min-w-screen flex justify-center items-center bg-gradient-to-b from-[#0B74B0]/30 via-[#75479C]/20 to-white dark:from-[#0B74B0]/30 dark:via-[#75479C]/20 dark:to-[#171717] p-4 sm:p-8">
         <div className="max-w-10xl w-full mx-auto">
           {/* Hero Section */}
           <div className="mb-16">
             <ShuffleHero />
           </div>
-          
+
           {/* Cards Section */}
         </div>
       </div>
-      <div className="w-full pb-32 bg-white dark:bg-[#171717]">
+      <div className="w-full pb-32 bg-gradient-to-b from-white to-[#0B74B0]/10 dark:from-[#171717] dark:to-[#0B74B0]/20">
         <Cards />
       </div>
     </main>

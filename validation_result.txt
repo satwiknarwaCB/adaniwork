@@ -1,0 +1,17 @@
+﻿==================================================
+SEED VALIDATION - FINAL RESULTS
+==================================================
+
+INCLUDED IN TOTALS:
+  Solar (A+B+C):  5,869.0 MW  [Expected: 5,869]
+  Wind (A+C):     1,204.6 MW  [Expected: 1,204]
+  OVERALL:        7,073.6 MW  [Expected: 7,073]
+
+EXCLUDED FROM TOTALS (Display Only):
+  D1+D2+B+D:      1,319.0 MW
+
+VALIDATION STATUS:
+  Solar match:    PASS
+  Wind match:     PASS
+  Overall match:  PASS
+==================================================

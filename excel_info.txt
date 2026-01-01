@@ -1,0 +1,10 @@
+Columns:
+['--- PAGE 1 | TABLE 1 ---', 'Unnamed: 1', 'Unnamed: 2', 'Unnamed: 3', 'Unnamed: 4', 'Unnamed: 5', 'Unnamed: 6', 'Unnamed: 7', 'Unnamed: 8', 'Unnamed: 9', 'Unnamed: 10', 'Unnamed: 11', 'Unnamed: 12', 'Unnamed: 13', 'Unnamed: 14', 'Unnamed: 15', 'Unnamed: 16', 'Unnamed: 17', 'Unnamed: 18', 'Unnamed: 19', 'Unnamed: 20', 'Unnamed: 21', 'Unnamed: 22', 'Unnamed: 23', 'Unnamed: 24']
+
+First Row:
+{'--- PAGE 1 | TABLE 1 ---': nan, 'Unnamed: 1': 'AGEL FY 25-26 Commissioning Status Update', 'Unnamed: 2': nan, 'Unnamed: 3': nan, 'Unnamed: 4': nan, 'Unnamed: 5': nan, 'Unnamed: 6': nan, 'Unnamed: 7': nan, 'Unnamed: 8': nan, 'Unnamed: 9': 'For Chairman Budget Purpose @6.5GW +535 MW carryover', 'Unnamed: 10': nan, 'Unnamed: 11': nan, 'Unnamed: 12': nan, 'Unnamed: 13': nan, 'Unnamed: 14': nan, 'Unnamed: 15': nan, 'Unnamed: 16': nan, 'Unnamed: 17': nan, 'Unnamed: 18': nan, 'Unnamed: 19': nan, 'Unnamed: 20': '31-Oct-25', 'Unnamed: 21': nan, 'Unnamed: 22': nan, 'Unnamed: 23': nan, 'Unnamed: 24': nan}
+
+Headers mapping check:
+Has 'Project Name': False
+Has 'Capacity Type': False
+Has 'Apr-25': False

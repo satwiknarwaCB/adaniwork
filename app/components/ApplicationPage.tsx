@@ -3,12 +3,13 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import CommissioningStatusPage from '@/app/components/CommissioningStatusPage';
+import CommissioningDashboard from '@/app/components/CommissioningDashboard';
 import LoginPage from '@/app/components/LoginPage';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 
 const ApplicationPage = () => {
-  const [activePage, setActivePage] = useState('commissioning');
+  const [activePage, setActivePage] = useState('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [theme, setTheme] = useState('light');
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -29,13 +30,13 @@ const ApplicationPage = () => {
     // Check system preference or saved theme
     const savedTheme = localStorage.getItem('theme');
     const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    
+
     if (savedTheme) {
       setTheme(savedTheme);
     } else if (systemPrefersDark) {
       setTheme('dark');
     }
-    
+
     // Apply theme to document
     if (theme === 'dark' || (!savedTheme && systemPrefersDark)) {
       document.documentElement.classList.add('dark');
@@ -46,7 +47,7 @@ const ApplicationPage = () => {
     const newTheme = theme === 'light' ? 'dark' : 'light';
     setTheme(newTheme);
     localStorage.setItem('theme', newTheme);
-    
+
     if (newTheme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
@@ -56,8 +57,8 @@ const ApplicationPage = () => {
 
   const handleLogout = () => {
     logout();
-    // Don't redirect to login page, just refresh the page to show logged out state
-    window.location.reload();
+    // Redirect to home page (login)
+    window.location.href = '/';
   };
 
   // Format date and time
@@ -80,9 +81,9 @@ const ApplicationPage = () => {
 
   // Define sidebar items with icons
   const sidebarItems = [
-    { 
-      id: 'home', 
-      name: 'Home', 
+    {
+      id: 'home',
+      name: 'Home',
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
           <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
@@ -90,9 +91,19 @@ const ApplicationPage = () => {
       ),
       href: '/'
     },
-    { 
-      id: 'commissioning', 
-      name: 'Commissioning Status', 
+    {
+      id: 'dashboard',
+      name: 'Dashboard',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+          <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
+        </svg>
+      ),
+      href: undefined
+    },
+    {
+      id: 'commissioning',
+      name: 'Commissioning Status',
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
           <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
@@ -104,6 +115,9 @@ const ApplicationPage = () => {
 
   // Define page content based on active page
   const renderPageContent = () => {
+    if (activePage === 'dashboard') {
+      return <CommissioningDashboard />;
+    }
     return <CommissioningStatusPage />;
   };
 
@@ -113,20 +127,20 @@ const ApplicationPage = () => {
       <header className="bg-white dark:bg-[#171717] shadow-md p-4 flex justify-between items-center border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
         <div className="flex items-center">
           <div className="flex items-center">
-            <img 
-              src="/adani-re.png" 
-              alt="Adani Logo" 
+            <img
+              src="/adani-re.png"
+              alt="Adani Logo"
               className="h-16 ml-4 object-contain"
             />
           </div>
         </div>
-        
+
         <div className="flex items-center space-x-4">
           <div className="text-right">
-            <div className="text-sm font-medium text-gray-900 dark:text-white">{formatDate(currentTime)}</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">{formatTime(currentTime)}</div>
+            <div className="text-sm font-medium text-gray-900 dark:text-white" suppressHydrationWarning>{formatDate(currentTime)}</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400" suppressHydrationWarning>{formatTime(currentTime)}</div>
           </div>
-          
+
           {user ? (
             <button
               onClick={handleLogout}
@@ -145,7 +159,7 @@ const ApplicationPage = () => {
               Login to Access
             </button>
           )}
-          
+
           <button
             onClick={toggleTheme}
             className="p-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
@@ -174,13 +188,12 @@ const ApplicationPage = () => {
                   <li key={item.id}>
                     {item.href ? (
                       // Use Link for navigation to main page
-                      <Link 
+                      <Link
                         href={item.href}
-                        className={`w-full text-left px-4 py-3 rounded-lg flex items-center ${
-                          activePage === item.id
-                            ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
-                            : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
-                        }`}
+                        className={`w-full text-left px-4 py-3 rounded-lg flex items-center ${activePage === item.id
+                          ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
+                          : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                          }`}
                       >
                         <span className="flex items-center justify-center">
                           {item.icon}
@@ -193,11 +206,10 @@ const ApplicationPage = () => {
                       // Use button for internal page changes
                       <button
                         onClick={() => setActivePage(item.id)}
-                        className={`w-full text-left px-4 py-3 rounded-lg flex items-center ${
-                          activePage === item.id
-                            ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
-                            : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
-                        }`}
+                        className={`w-full text-left px-4 py-3 rounded-lg flex items-center ${activePage === item.id
+                          ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
+                          : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                          }`}
                       >
                         <span className="flex items-center justify-center">
                           {item.icon}
@@ -212,10 +224,10 @@ const ApplicationPage = () => {
               </ul>
             </nav>
           </div>
-          
+
           {/* Collapse/Expand button at the bottom */}
           <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-            <button 
+            <button
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
               className="w-full text-left text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg p-2 flex items-center"
             >
