@@ -110,6 +110,25 @@ export default function CommissioningDashboard() {
     // Local Chart States for specific card dropdowns
     const [techMixStatus, setTechMixStatus] = useState('All Projects');
     const [techMixProject, setTechMixProject] = useState('All Projects');
+    const [techMixGeography, setTechMixGeography] = useState('All Sites');
+    const [techMixHovered, setTechMixHovered] = useState<any>(null);
+
+    // Business Model Filter for charts
+    const [businessModelFilter, setBusinessModelFilter] = useState('All Models');
+    const [timelineBusinessModel, setTimelineBusinessModel] = useState('All Models');
+    const [timelineGeography, setTimelineGeography] = useState('All Sites');
+
+    // Solar Dashboard specific
+    const [solarGeography, setSolarGeography] = useState('All Sites');
+    const [solarBusinessModel, setSolarBusinessModel] = useState('All Models');
+
+    // Wind Dashboard specific
+    const [windGeography, setWindGeography] = useState('All Sites');
+    const [windBusinessModel, setWindBusinessModel] = useState('All Models');
+
+    // Models Dashboard
+    const [modelsGeography, setModelsGeography] = useState('All Sites');
+    const [modelsTechnology, setModelsTechnology] = useState('All');
 
     // KPI Specific Filters
     const [kpi1Scope, setKpi1Scope] = useState('Overall');
@@ -159,6 +178,21 @@ export default function CommissioningDashboard() {
 
     const kpiScopes = ['Overall', 'Solar', 'Wind'];
 
+    // Geography/Site Options based on section names
+    const geographyOptions = useMemo(() => {
+        const sites = allProjects
+            .filter(p => p.includedInTotal)
+            .map(p => {
+                if (p.section?.toLowerCase().includes('khavda')) return 'Khavda';
+                if (p.section?.toLowerCase().includes('rajasthan')) return 'Rajasthan';
+                if (p.section?.toLowerCase().includes('mundra')) return 'Mundra';
+                return 'Others';
+            });
+        return ['All Sites', ...Array.from(new Set(sites)).filter(s => s !== 'Others').sort(), 'Others'];
+    }, [allProjects]);
+
+    // Business Model Options
+    const businessModelOptions = ['All Models', 'PPA', 'Merchant', 'Group'];
 
     const projectOptions = useMemo(() => {
         const included = allProjects.filter(p => p.includedInTotal);
@@ -172,12 +206,36 @@ export default function CommissioningDashboard() {
         return ['All SPVs', ...names];
     }, [allProjects]);
 
+    // Helper function to get geography from section
+    const getGeography = (section: string | undefined) => {
+        if (!section) return 'Others';
+        if (section.toLowerCase().includes('khavda')) return 'Khavda';
+        if (section.toLowerCase().includes('rajasthan')) return 'Rajasthan';
+        if (section.toLowerCase().includes('mundra')) return 'Mundra';
+        return 'Others';
+    };
+
+    // Helper to filter by geography
+    const filterByGeography = (projects: CommissioningProject[], geo: string) => {
+        if (geo === 'All Sites') return projects;
+        return projects.filter(p => getGeography(p.section) === geo);
+    };
+
+    // Helper to filter by business model
+    const filterByBusinessModel = (projects: CommissioningProject[], model: string) => {
+        if (model === 'All Models') return projects;
+        return projects.filter(p => p.projectType === model);
+    };
+
     const filteredTimelineProjects = useMemo(() => {
         let projs = allProjects.filter(p => p.includedInTotal);
         if (mainTimelineProject !== 'All Projects') projs = projs.filter(p => p.projectName === mainTimelineProject);
         if (mainTimelineSPV !== 'All SPVs') projs = projs.filter(p => p.spv === mainTimelineSPV);
+        projs = filterByGeography(projs, timelineGeography);
+        projs = filterByBusinessModel(projs, timelineBusinessModel);
         return projs;
-    }, [allProjects, mainTimelineProject, mainTimelineSPV]);
+    }, [allProjects, mainTimelineProject, mainTimelineSPV, timelineGeography, timelineBusinessModel]);
+
 
     const halfYearlyData = useMemo(() => {
         const h1Months = ['apr', 'may', 'jun', 'jul', 'aug', 'sep'];
@@ -239,6 +297,7 @@ export default function CommissioningDashboard() {
 
     const techSplitData = useMemo(() => {
         let projects = allProjects.filter(p => p.planActual === 'Plan' && p.includedInTotal);
+        projects = filterByGeography(projects, techMixGeography);
         if (techMixProject !== 'All Projects') {
             projects = projects.filter(p => p.projectName === techMixProject);
         } else if (techMixStatus !== 'All Projects') {
@@ -250,11 +309,21 @@ export default function CommissioningDashboard() {
         }
         const solar = projects.filter(p => p.category?.toLowerCase().includes('solar')).reduce((s, p) => s + (p.capacity || 0), 0);
         const wind = projects.filter(p => p.category?.toLowerCase().includes('wind')).reduce((s, p) => s + (p.capacity || 0), 0);
-        return [
-            { name: 'Solar', value: solar, color: '#F97316' },
-            { name: 'Wind', value: wind, color: '#06B6D4' },
-        ].filter(d => d.value > 0);
-    }, [allProjects, techMixProject, techMixStatus]);
+
+        // Calculate geography breakdown for context
+        const khavda = projects.filter(p => getGeography(p.section) === 'Khavda').reduce((s, p) => s + (p.capacity || 0), 0);
+        const rajasthan = projects.filter(p => getGeography(p.section) === 'Rajasthan').reduce((s, p) => s + (p.capacity || 0), 0);
+        const others = projects.filter(p => !['Khavda', 'Rajasthan'].includes(getGeography(p.section))).reduce((s, p) => s + (p.capacity || 0), 0);
+
+        return {
+            data: [
+                { name: 'Solar', value: solar, color: '#F97316' },
+                { name: 'Wind', value: wind, color: '#06B6D4' },
+            ].filter(d => d.value > 0),
+            breakdown: { khavda, rajasthan, others, total: solar + wind }
+        };
+    }, [allProjects, techMixProject, techMixStatus, techMixGeography]);
+
 
     const modelSplitData = useMemo(() => {
         const planProjects = filteredProjects.filter(p => p.planActual === 'Plan');
@@ -507,70 +576,139 @@ export default function CommissioningDashboard() {
                                 <ChartContainer
                                     title={techMixProject !== 'All Projects' ? `⚡ ${techMixProject} Mix` : "⚡ Technology Mix"}
                                     controls={
-                                        <div className="flex gap-2">
+                                        <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                                            <CardSelect label="SITE" options={geographyOptions} value={techMixGeography} onChange={setTechMixGeography} />
                                             <CardSelect label="PROJECT" options={projectOptions} value={techMixProject} onChange={setTechMixProject} />
-                                            <CardSelect label="STATUS" options={['All Projects', 'Completed', 'Upcoming']} value={techMixStatus} onChange={setTechMixStatus} />
+                                            <div className="col-span-2">
+                                                <CardSelect label="STATUS" options={['All Projects', 'Completed', 'Upcoming']} value={techMixStatus} onChange={setTechMixStatus} />
+                                            </div>
                                         </div>
                                     }
                                 >
-                                    <div className="h-[220px] relative">
+                                    <div className="h-[250px] relative">
                                         <ResponsiveContainer width="100%" height="100%">
                                             <PieChart>
                                                 <Pie
-                                                    data={techSplitData}
-                                                    innerRadius={60}
-                                                    outerRadius={80}
+                                                    data={techSplitData.data}
+                                                    innerRadius={70}
+                                                    outerRadius={95}
                                                     dataKey="value"
                                                     stroke="none"
                                                     animationBegin={0}
                                                     animationDuration={800}
+                                                    onMouseEnter={(_, index) => setTechMixHovered(techSplitData.data[index])}
+                                                    onMouseLeave={() => setTechMixHovered(null)}
                                                 >
-                                                    {techSplitData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                                                    {techSplitData.data.map((e, i) => (
+                                                        <Cell
+                                                            key={i}
+                                                            fill={e.color}
+                                                            style={{
+                                                                filter: techMixHovered && techMixHovered.name !== e.name ? 'opacity(0.3)' : 'none',
+                                                                transition: 'all 0.3s'
+                                                            }}
+                                                        />
+                                                    ))}
                                                 </Pie>
                                                 <Tooltip
-                                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                                    formatter={(v: any, name: any) => [`${v.toLocaleString()} MW`, name]}
+                                                    content={() => null} // Hidden because center text shows it
                                                 />
                                             </PieChart>
                                         </ResponsiveContainer>
                                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                            <span className="text-2xl font-black text-gray-800 dark:text-white">
-                                                {techSplitData.reduce((s, p) => s + p.value, 0).toLocaleString()}
+                                            <motion.span
+                                                key={techMixHovered ? techMixHovered.value : 'total'}
+                                                initial={{ scale: 0.9, opacity: 0 }}
+                                                animate={{ scale: 1, opacity: 1 }}
+                                                className="text-3xl font-black text-gray-800 dark:text-white leading-none"
+                                            >
+                                                {(techMixHovered ? techMixHovered.value : techSplitData.breakdown.total).toLocaleString()}
+                                            </motion.span>
+                                            <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest mt-1">
+                                                {techMixHovered ? `${techMixHovered.name} CAPACITY` : "Target Portfolio"}
                                             </span>
-                                            <span className="text-[8px] font-black text-gray-400 uppercase">Total MW</span>
+                                            <span className="text-[8px] font-bold text-blue-500/60 uppercase">Planned MW</span>
                                         </div>
                                     </div>
-                                    <div className="flex justify-center gap-6 mt-4">
-                                        {techSplitData.map(d => {
-                                            const total = techSplitData.reduce((s, x) => s + x.value, 0);
-                                            const perc = total > 0 ? (d.value / total) * 100 : 0;
+                                    {/* Technology breakdown with values */}
+                                    <div className="flex justify-center gap-8 mt-4">
+                                        {techSplitData.data.map(d => {
+                                            const perc = techSplitData.breakdown.total > 0 ? (d.value / techSplitData.breakdown.total) * 100 : 0;
                                             return (
-                                                <div key={d.name} className="flex flex-col items-center">
-                                                    <div className="flex items-center gap-2">
+                                                <div
+                                                    key={d.name}
+                                                    className={`flex flex-col items-center transition-all duration-300 ${techMixHovered && techMixHovered.name !== d.name ? 'opacity-30' : 'opacity-100'}`}
+                                                >
+                                                    <div className="flex items-center gap-2 mb-1">
                                                         <div className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
                                                         <span className="text-[10px] font-black text-gray-500 uppercase">{d.name}</span>
                                                     </div>
-                                                    <span className="text-xs font-black text-gray-900 dark:text-white">{d.value.toLocaleString()} MW</span>
-                                                    <span className="text-[9px] font-bold text-blue-500">{perc.toFixed(1)}%</span>
+                                                    <span className="text-sm font-black text-gray-900 dark:text-white">{d.value.toLocaleString()} MW</span>
+                                                    <span className="text-[10px] font-bold text-blue-500">{perc.toFixed(1)}%</span>
                                                 </div>
                                             );
                                         })}
                                     </div>
+                                    <div className="mt-6 pt-4 border-t border-gray-100 dark:border-gray-800">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em]">Geographic Deployment</p>
+                                            <span className="text-[8px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full uppercase">Regional View</span>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {techSplitData.breakdown.khavda > 0 && (
+                                                <div className="bg-blue-50/50 dark:bg-blue-900/10 p-2 rounded-xl border border-blue-100/50">
+                                                    <p className="text-[8px] font-black text-blue-400 uppercase">Khavda</p>
+                                                    <p className="text-xs font-black text-blue-700">{techSplitData.breakdown.khavda.toLocaleString()} MW</p>
+                                                </div>
+                                            )}
+                                            {techSplitData.breakdown.rajasthan > 0 && (
+                                                <div className="bg-amber-50/50 dark:bg-amber-900/10 p-2 rounded-xl border border-amber-100/50">
+                                                    <p className="text-[8px] font-black text-amber-400 uppercase">Rajasthan</p>
+                                                    <p className="text-xs font-black text-amber-700">{techSplitData.breakdown.rajasthan.toLocaleString()} MW</p>
+                                                </div>
+                                            )}
+                                            {techSplitData.breakdown.others > 0 && (
+                                                <div className="bg-gray-50/50 dark:bg-gray-800 p-2 rounded-xl border border-gray-100 col-span-2">
+                                                    <p className="text-[8px] font-black text-gray-400 uppercase">General Portfolio</p>
+                                                    <p className="text-xs font-black text-gray-700">{techSplitData.breakdown.others.toLocaleString()} MW</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
                                 </ChartContainer>
+
                             </div>
 
                             <div className="w-full lg:w-2/3 flex flex-col min-w-0">
                                 <ChartContainer
                                     title={mainTimelineProject !== 'All Projects' ? `📈 ${mainTimelineProject} Performance` : (timelineView === 'monthly' ? "📅 Monthly Timeline" : timelineView === 'quarterly' ? "📊 Quarterly Performance" : timelineView === 'half-yearly' ? "📅 Half-Yearly View" : "📈 Annual Summary")}
                                     controls={
-                                        <div className="flex flex-wrap items-end gap-4">
+                                        <div className="flex flex-wrap items-end gap-3">
+                                            <CardSelect label="SITE" options={geographyOptions} value={timelineGeography} onChange={setTimelineGeography} />
+                                            <CardSelect label="MODEL" options={businessModelOptions} value={timelineBusinessModel} onChange={setTimelineBusinessModel} />
                                             <CardSelect label="PROJECT" options={projectOptions} value={mainTimelineProject} onChange={setMainTimelineProject} />
-                                            <CardSelect label="SPV VIEW" options={spvOptions} value={mainTimelineSPV} onChange={setMainTimelineSPV} />
+                                            <CardSelect label="SPV" options={spvOptions} value={mainTimelineSPV} onChange={setMainTimelineSPV} />
                                             <ViewPivot active={timelineView} onChange={setTimelineView} />
                                         </div>
                                     }
                                 >
-                                    <ResponsiveContainer width="100%" height={560}>
+                                    {/* Active Filters Context Label */}
+                                    <div className="mb-4 flex flex-wrap gap-2 text-[9px]">
+                                        <span className="bg-indigo-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
+                                            FY {selectedFY}
+                                        </span>
+                                        <span className="bg-blue-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
+                                            {categoryFilter === 'all' ? 'Solar + Wind' : categoryFilter}
+                                        </span>
+                                        <span className="bg-purple-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
+                                            {timelineBusinessModel === 'All Models' ? 'All Models' : timelineBusinessModel}
+                                        </span>
+                                        <span className="bg-emerald-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
+                                            {timelineGeography === 'All Sites' ? 'All Sites' : timelineGeography}
+                                        </span>
+                                    </div>
+
+                                    <ResponsiveContainer width="100%" height={500}>
                                         <BarChart data={timelineView === 'monthly' ? monthlyData : timelineView === 'half-yearly' ? halfYearlyData : quarterlyData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
                                             {GRADIENTS}
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
@@ -581,7 +719,7 @@ export default function CommissioningDashboard() {
                                                 content={({ active, payload, label }) => {
                                                     if (active && payload && payload.length) {
                                                         return (
-                                                            <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 min-w-[200px]">
+                                                            <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 min-w-[220px]">
                                                                 <p className="font-black text-lg mb-2">{label}</p>
                                                                 {payload.map((p: any) => (
                                                                     <div key={p.name} className="flex justify-between items-center py-1">
@@ -592,8 +730,8 @@ export default function CommissioningDashboard() {
                                                                         <span className="font-black text-gray-900 dark:text-white ml-4">{p.value.toLocaleString()} MW</span>
                                                                     </div>
                                                                 ))}
-                                                                <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 text-[10px] text-gray-400 font-bold uppercase tracking-wider">
-                                                                    Max Info Context Available
+                                                                <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 text-[9px] text-gray-400 font-bold uppercase">
+                                                                    {timelineGeography} | {timelineBusinessModel} | FY {selectedFY}
                                                                 </div>
                                                             </div>
                                                         );
@@ -609,20 +747,57 @@ export default function CommissioningDashboard() {
                                     </ResponsiveContainer>
                                 </ChartContainer>
                             </div>
+
                         </div>
                     )}
 
                     {activeDashboard === 'solar' && (
                         <div className="bg-gradient-to-br from-orange-50/50 via-white to-white dark:from-orange-950/20 dark:via-gray-900 dark:to-gray-900 rounded-[3rem] p-8 border border-orange-100/50 dark:border-gray-800 shadow-xl space-y-8">
-                            <div className="flex justify-between items-center">
+                            <div className="flex flex-wrap justify-between items-center gap-4">
                                 <h3 className="text-2xl font-black text-gray-800 dark:text-white flex items-center gap-4">
                                     <span className="p-3 bg-orange-500 rounded-2xl text-white shadow-lg shadow-orange-500/30 text-2xl">☀️</span>
                                     Solar Portfolio Analysis
                                 </h3>
-                                <div className="flex gap-4">
+                                <div className="flex flex-wrap gap-3">
+                                    <CardSelect label="SITE" options={geographyOptions} value={solarGeography} onChange={setSolarGeography} />
+                                    <CardSelect label="MODEL" options={businessModelOptions} value={solarBusinessModel} onChange={setSolarBusinessModel} />
                                     <MultiSlicer label="Projects" options={SECTION_OPTIONS.filter(s => s.label.includes('Solar'))} selected={selectedSections} onChange={setSelectedSections} />
                                 </div>
                             </div>
+
+                            {/* Solar Summary with Breakdown */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-white/50 dark:bg-gray-900/50 rounded-2xl p-4 border border-orange-100 dark:border-gray-800">
+                                <div className="text-center">
+                                    <p className="text-[9px] font-black text-orange-500 uppercase tracking-widest">Total Plan</p>
+                                    <p className="text-2xl font-black text-gray-900 dark:text-white">{solarData.totalPlan.toLocaleString()} <span className="text-sm text-gray-400">MW</span></p>
+                                </div>
+                                <div className="text-center">
+                                    <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Actual</p>
+                                    <p className="text-2xl font-black text-gray-900 dark:text-white">{solarData.totalActual.toLocaleString()} <span className="text-sm text-gray-400">MW</span></p>
+                                </div>
+                                <div className="text-center">
+                                    <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest">Achievement</p>
+                                    <p className="text-2xl font-black text-gray-900 dark:text-white">{solarData.totalPlan > 0 ? ((solarData.totalActual / solarData.totalPlan) * 100).toFixed(1) : 0}%</p>
+                                </div>
+                                <div className="text-center">
+                                    <p className="text-[9px] font-black text-purple-500 uppercase tracking-widest">Projects</p>
+                                    <p className="text-2xl font-black text-gray-900 dark:text-white">{solarData.projectCount}</p>
+                                </div>
+                            </div>
+
+                            {/* Active Filters Context */}
+                            <div className="flex flex-wrap gap-2 text-[9px]">
+                                <span className="bg-indigo-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">FY {selectedFY}</span>
+                                <span className="bg-orange-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">Solar Only</span>
+                                <span className="bg-purple-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
+                                    {solarBusinessModel === 'All Models' ? 'All Models' : solarBusinessModel}
+                                </span>
+                                <span className="bg-emerald-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
+                                    {solarGeography === 'All Sites' ? 'All Sites' : solarGeography}
+                                </span>
+                            </div>
+
+
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                 <ChartContainer
                                     title="Solar - Quarterly Comparison"
@@ -655,6 +830,7 @@ export default function CommissioningDashboard() {
                                     </ResponsiveContainer>
                                 </ChartContainer>
                             </div>
+
 
                             <div className="bg-white dark:bg-gray-950 border border-gray-100 dark:border-gray-800 rounded-[2.5rem] p-8 shadow-sm">
                                 <h4 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-6">Solar Project Portfolio Breakdown</h4>
@@ -693,15 +869,51 @@ export default function CommissioningDashboard() {
 
                     {activeDashboard === 'wind' && (
                         <div className="bg-gradient-to-br from-cyan-50/50 via-white to-white dark:from-cyan-950/20 dark:via-gray-900 dark:to-gray-900 rounded-[3rem] p-8 border border-cyan-100/50 dark:border-gray-800 shadow-xl space-y-8">
-                            <div className="flex justify-between items-center">
+                            <div className="flex flex-wrap justify-between items-center gap-4">
                                 <h3 className="text-2xl font-black text-gray-800 dark:text-white flex items-center gap-4">
                                     <span className="p-3 bg-cyan-500 rounded-2xl text-white shadow-lg shadow-cyan-500/30 text-2xl">🌬️</span>
                                     Wind Portfolio Analysis
                                 </h3>
-                                <div className="flex gap-4">
+                                <div className="flex flex-wrap gap-3">
+                                    <CardSelect label="SITE" options={geographyOptions} value={windGeography} onChange={setWindGeography} />
+                                    <CardSelect label="MODEL" options={businessModelOptions} value={windBusinessModel} onChange={setWindBusinessModel} />
                                     <MultiSlicer label="Projects" options={SECTION_OPTIONS.filter(s => s.label.includes('Wind'))} selected={selectedSections} onChange={setSelectedSections} />
                                 </div>
                             </div>
+
+                            {/* Wind Summary with Breakdown */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-white/50 dark:bg-gray-900/50 rounded-2xl p-4 border border-cyan-100 dark:border-gray-800">
+                                <div className="text-center">
+                                    <p className="text-[9px] font-black text-cyan-500 uppercase tracking-widest">Total Plan</p>
+                                    <p className="text-2xl font-black text-gray-900 dark:text-white">{windData.totalPlan.toLocaleString()} <span className="text-sm text-gray-400">MW</span></p>
+                                </div>
+                                <div className="text-center">
+                                    <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Actual</p>
+                                    <p className="text-2xl font-black text-gray-900 dark:text-white">{windData.totalActual.toLocaleString()} <span className="text-sm text-gray-400">MW</span></p>
+                                </div>
+                                <div className="text-center">
+                                    <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest">Achievement</p>
+                                    <p className="text-2xl font-black text-gray-900 dark:text-white">{windData.totalPlan > 0 ? ((windData.totalActual / windData.totalPlan) * 100).toFixed(1) : 0}%</p>
+                                </div>
+                                <div className="text-center">
+                                    <p className="text-[9px] font-black text-purple-500 uppercase tracking-widest">Projects</p>
+                                    <p className="text-2xl font-black text-gray-900 dark:text-white">{windData.projectCount}</p>
+                                </div>
+                            </div>
+
+                            {/* Active Filters Context */}
+                            <div className="flex flex-wrap gap-2 text-[9px]">
+                                <span className="bg-indigo-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">FY {selectedFY}</span>
+                                <span className="bg-cyan-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">Wind Only</span>
+                                <span className="bg-purple-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
+                                    {windBusinessModel === 'All Models' ? 'All Models' : windBusinessModel}
+                                </span>
+                                <span className="bg-emerald-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
+                                    {windGeography === 'All Sites' ? 'All Sites' : windGeography}
+                                </span>
+                            </div>
+
+
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                 <ChartContainer
                                     title="Wind - Quarterly Comparison"
@@ -733,6 +945,7 @@ export default function CommissioningDashboard() {
                                         </AreaChart>
                                     </ResponsiveContainer>
                                 </ChartContainer>
+
                             </div>
 
                             <div className="bg-white dark:bg-gray-950 border border-gray-100 dark:border-gray-800 rounded-[2.5rem] p-8 shadow-sm">
@@ -772,11 +985,37 @@ export default function CommissioningDashboard() {
 
                     {activeDashboard === 'models' && (
                         <div className="space-y-8">
+                            {/* Models Dashboard Header */}
+                            <div className="bg-gradient-to-br from-purple-50/50 via-white to-pink-50/30 dark:from-purple-950/20 dark:via-gray-900 dark:to-gray-900 rounded-[3rem] p-6 border border-purple-100/50 dark:border-gray-800">
+                                <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
+                                    <h3 className="text-2xl font-black text-gray-800 dark:text-white flex items-center gap-4">
+                                        <span className="p-3 bg-purple-500 rounded-2xl text-white shadow-lg shadow-purple-500/30 text-2xl">💼</span>
+                                        Business Model Analysis
+                                    </h3>
+                                    <div className="flex flex-wrap gap-3">
+                                        <GlobalSlicer label="Technology" options={['All', 'Solar', 'Wind']} value={modelsTechnology} onChange={setModelsTechnology} />
+                                        <CardSelect label="SITE" options={geographyOptions} value={modelsGeography} onChange={setModelsGeography} />
+                                    </div>
+                                </div>
+                                {/* Active Filters Context */}
+                                <div className="flex flex-wrap gap-2 text-[9px]">
+                                    <span className="bg-indigo-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">FY {selectedFY}</span>
+                                    <span className="bg-blue-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
+                                        {modelsTechnology === 'All' ? 'Solar + Wind' : modelsTechnology}
+                                    </span>
+                                    <span className="bg-emerald-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
+                                        {modelsGeography === 'All Sites' ? 'All Sites' : modelsGeography}
+                                    </span>
+                                </div>
+
+                            </div>
+
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                                 <ChartContainer
                                     title="💼 Business Model Distribution"
                                     controls={<CardSelect label="METRIC" options={['Capacity Share', 'Project Count']} value={modelMetric} onChange={setModelMetric} />}
                                 >
+
                                     <ResponsiveContainer width="100%" height={300}>
                                         <PieChart>
                                             <Pie data={modelSplitData} innerRadius={80} outerRadius={110} dataKey="value" stroke="none">
@@ -812,9 +1051,64 @@ export default function CommissioningDashboard() {
 
                     {activeDashboard === 'deviation' && (
                         <div className="space-y-8">
+                            {/* Deviation Dashboard Header with Filters */}
+                            <div className="bg-gradient-to-br from-rose-50/50 via-white to-amber-50/30 dark:from-rose-950/20 dark:via-gray-900 dark:to-gray-900 rounded-[3rem] p-6 border border-rose-100/50 dark:border-gray-800">
+                                <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
+                                    <h3 className="text-2xl font-black text-gray-800 dark:text-white flex items-center gap-4">
+                                        <span className="p-3 bg-rose-500 rounded-2xl text-white shadow-lg shadow-rose-500/30 text-2xl">⚠️</span>
+                                        Deviation Analysis Dashboard
+                                    </h3>
+                                    <div className="flex flex-wrap gap-3">
+                                        <GlobalSlicer label="Technology" options={['All', 'Solar', 'Wind']} value={categoryFilter === 'all' ? 'All' : categoryFilter === 'solar' ? 'Solar' : 'Wind'} onChange={(v: string) => setCategoryFilter(v.toLowerCase() as any)} />
+                                        <CardSelect label="MODEL" options={businessModelOptions} value={timelineBusinessModel} onChange={setTimelineBusinessModel} />
+                                        <CardSelect label="SITE" options={geographyOptions} value={timelineGeography} onChange={setTimelineGeography} />
+                                    </div>
+                                </div>
+
+                                {/* Deviation Summary Stats */}
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <div className="bg-white/80 dark:bg-gray-900/50 rounded-2xl p-4 text-center border border-rose-100 dark:border-gray-800">
+                                        <p className="text-[9px] font-black text-rose-500 uppercase tracking-widest">Total Deviation</p>
+                                        <p className={`text-2xl font-black ${(overallKpi.actual - overallKpi.plan) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                            {(overallKpi.actual - overallKpi.plan) >= 0 ? '+' : ''}{(overallKpi.actual - overallKpi.plan).toLocaleString()} <span className="text-sm">MW</span>
+                                        </p>
+                                    </div>
+                                    <div className="bg-white/80 dark:bg-gray-900/50 rounded-2xl p-4 text-center border border-gray-100 dark:border-gray-800">
+                                        <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Periods Behind</p>
+                                        <p className="text-2xl font-black text-rose-600">{deviationChartData.filter(d => d.Deviation < 0).length}</p>
+                                    </div>
+                                    <div className="bg-white/80 dark:bg-gray-900/50 rounded-2xl p-4 text-center border border-gray-100 dark:border-gray-800">
+                                        <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Periods Ahead</p>
+                                        <p className="text-2xl font-black text-emerald-600">{deviationChartData.filter(d => d.Deviation >= 0).length}</p>
+                                    </div>
+                                    <div className="bg-white/80 dark:bg-gray-900/50 rounded-2xl p-4 text-center border border-gray-100 dark:border-gray-800">
+                                        <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Projects Critical</p>
+                                        <p className="text-2xl font-black text-amber-600">{criticalProjects.filter(p => p.diff < 0).length}</p>
+                                    </div>
+                                </div>
+
+                                {/* Active Filters Context */}
+                                <div className="flex flex-wrap gap-2 text-[9px] mt-4">
+                                    <span className="bg-indigo-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">FY {selectedFY}</span>
+                                    <span className="bg-rose-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
+                                        {categoryFilter === 'all' ? 'Solar + Wind' : categoryFilter}
+                                    </span>
+                                    <span className="bg-purple-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
+                                        {timelineBusinessModel === 'All Models' ? 'All Models' : timelineBusinessModel}
+                                    </span>
+                                    <span className="bg-emerald-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
+                                        {timelineGeography === 'All Sites' ? 'All Sites' : timelineGeography}
+                                    </span>
+                                    <span className="bg-amber-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
+                                        Deviations Only
+                                    </span>
+                                </div>
+
+                            </div>
+
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                 <ChartContainer
-                                    title="⚠️ Target Deviation (Actual vs Plan)"
+                                    title="⚠️ Deviation by Period (Actual − Plan)"
                                     controls={
                                         <ViewPivot active={deviationView} onChange={setDeviationView} />
                                     }
@@ -838,6 +1132,9 @@ export default function CommissioningDashboard() {
                                                                 <p className="text-[10px] font-bold text-gray-400 uppercase mt-1">
                                                                     {val >= 0 ? 'Ahead of Schedule' : 'Action Required'}
                                                                 </p>
+                                                                <p className="text-[9px] text-gray-400 mt-2 border-t pt-2">
+                                                                    {categoryFilter === 'all' ? 'All Technologies' : categoryFilter} | {timelineBusinessModel} | {timelineGeography}
+                                                                </p>
                                                             </div>
                                                         );
                                                     }
@@ -851,6 +1148,7 @@ export default function CommissioningDashboard() {
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </ChartContainer>
+
 
                                 <ChartContainer
                                     title="📋 Critical Action Required (Top 5 Deviations)"
@@ -939,38 +1237,50 @@ export default function CommissioningDashboard() {
     );
 }
 
+
 // Sub-components
 function GlobalSlicer({ label, options, value, onChange }: { label: string; options: string[]; value: string; onChange: (v: string) => void }) {
     const [isOpen, setIsOpen] = useState(false);
+    const buttonRef = React.useRef<HTMLButtonElement>(null);
+
+    const handleOpen = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setIsOpen(!isOpen);
+    };
+
     return (
-        <div className="flex flex-col gap-1 relative items-end">
-            <span className="text-[8px] font-black text-indigo-500 dark:text-indigo-400 uppercase tracking-widest">{label}</span>
+        <div className="relative flex flex-col gap-1 items-end">
+            <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest">{label}</span>
             <button
-                onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
-                className="flex items-center gap-2 bg-white/80 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2 text-[11px] font-black text-gray-700 dark:text-gray-200 hover:border-indigo-400 transition-all shadow-md group/gs"
+                ref={buttonRef}
+                onClick={handleOpen}
+                className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-xl px-3 py-1.5 text-[10px] font-black text-gray-700 transition-all shadow-sm group/gs"
             >
                 {value.toUpperCase()}
-                <span className={`text-[8px] opacity-40 group-hover/gs:text-indigo-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
+                <span className={`text-[8px] text-gray-400 group-hover/gs:text-gray-600 transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
             </button>
+
             <AnimatePresence>
                 {isOpen && (
                     <>
-                        <div className="fixed inset-0 z-[60]" onClick={() => setIsOpen(false)} />
+                        <div className="fixed inset-0 z-[200]" onClick={() => setIsOpen(false)} />
                         <motion.div
-                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                            initial={{ opacity: 0, y: -5, scale: 0.95 }}
                             animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                            className="absolute top-full right-0 mt-2 w-40 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-800 rounded-2xl shadow-2xl p-2 z-[70]"
+                            exit={{ opacity: 0, y: -5, scale: 0.95 }}
+                            className="absolute top-full mt-2 right-0 w-48 bg-white border border-gray-200 rounded-xl shadow-2xl p-1.5 z-[210]"
                         >
-                            {options.map(o => (
-                                <button
-                                    key={o}
-                                    onClick={() => { onChange(o.toLowerCase() as any); setIsOpen(false); }}
-                                    className={`w-full text-left px-4 py-2 text-[10px] font-black uppercase rounded-lg transition-colors ${value.toLowerCase() === o.toLowerCase() ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
-                                >
-                                    {o}
-                                </button>
-                            ))}
+                            <div className="max-h-80 overflow-y-auto custom-scrollbar space-y-0.5">
+                                {options.map(o => (
+                                    <button
+                                        key={o}
+                                        onClick={() => { onChange(o.toLowerCase() as any); setIsOpen(false); }}
+                                        className={`w-full text-left px-3 py-2 text-[10px] font-black uppercase rounded-lg transition-colors ${value.toLowerCase() === o.toLowerCase() ? 'bg-indigo-500 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                                    >
+                                        {o}
+                                    </button>
+                                ))}
+                            </div>
                         </motion.div>
                     </>
                 )}
@@ -979,20 +1289,23 @@ function GlobalSlicer({ label, options, value, onChange }: { label: string; opti
     );
 }
 
+
+
+
 function ViewPivot({ active, onChange, label = "VIEW PERIOD" }: { active: string; onChange: (v: any) => void; label?: string }) {
     return (
         <div className="flex flex-col items-end gap-1">
-            <span className="text-[8px] font-black text-indigo-500 dark:text-indigo-400 uppercase tracking-[0.15em] mb-1">{label}</span>
-            <div className="bg-gray-100/80 dark:bg-gray-800/80 p-1.5 rounded-xl flex items-center shadow-inner border border-gray-200 dark:border-gray-700 backdrop-blur-sm">
+            <span className="text-[8px] font-black text-gray-500 dark:text-indigo-400 uppercase tracking-[0.15em]">{label}</span>
+            <div className="bg-gray-100 dark:bg-gray-800 p-1 rounded-xl flex items-center gap-1 border border-gray-200 dark:border-gray-700">
                 {['yearly', 'half-yearly', 'quarterly', 'monthly'].map((v) => (
                     <button
                         key={v}
                         onClick={() => onChange(v as any)}
-                        className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all duration-300 ${active === v
-                            ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-lg scale-105'
-                            : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'}`}
+                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all duration-200 whitespace-nowrap ${active === v
+                            ? 'bg-indigo-500 text-white shadow-md'
+                            : 'bg-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-700'}`}
                     >
-                        {v.replace('-yearly', '')}
+                        {v === 'half-yearly' ? 'HALF' : v.replace('-yearly', '').toUpperCase()}
                     </button>
                 ))}
             </div>
@@ -1000,84 +1313,105 @@ function ViewPivot({ active, onChange, label = "VIEW PERIOD" }: { active: string
     );
 }
 
+
 function MultiSlicer({ label, options, selected, onChange }: { label: string; options: any[]; selected: string[]; onChange: (v: string[]) => void }) {
     const [isOpen, setIsOpen] = useState(false);
+    const buttonRef = React.useRef<HTMLButtonElement>(null);
+
+    const handleOpen = () => {
+        setIsOpen(!isOpen);
+    };
+
     return (
-        <div className="flex flex-col gap-1 relative">
-            <span className="text-[8px] font-black text-indigo-500 dark:text-indigo-400 uppercase tracking-widest">{label}</span>
+        <div className="relative flex flex-col gap-1">
+            <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest">{label}</span>
             <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center justify-between gap-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-[11px] font-black text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500/20 cursor-pointer hover:border-indigo-400 transition-all shadow-sm min-w-[120px]"
+                ref={buttonRef}
+                onClick={handleOpen}
+                className="flex items-center justify-between gap-3 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-xl px-3 py-1.5 text-[10px] font-black text-gray-700 transition-all shadow-sm min-w-[100px]"
             >
-                <span className="truncate">{selected.includes('all') ? 'ALL PROJECTS' : `${selected.length} SELECTED`}</span>
-                <span className="text-[8px] opacity-40">▼</span>
+                <span className="truncate">{selected.includes('all') ? 'ALL' : `${selected.length} SEL`}</span>
+                <span className={`text-[8px] text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
             </button>
+
             <AnimatePresence>
                 {isOpen && (
-                    <motion.div
-                        initial={{ scale: 0.95, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        exit={{ scale: 0.95, opacity: 0 }}
-                        className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-800 rounded-2xl shadow-2xl p-3 z-50"
-                    >
-                        <div className="space-y-1 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
-                            <button
-                                onClick={() => { onChange(['all']); setIsOpen(false); }}
-                                className="w-full text-left px-3 py-2 text-xs font-bold hover:bg-gray-50 dark:hover:bg-gray-700 rounded-xl"
-                            >
-                                Show All
-                            </button>
-                            {options.map((o) => (
-                                <div key={o.value} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-xl cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={selected.includes(o.value)}
-                                        onChange={(e) => {
-                                            const next = e.target.checked
-                                                ? [...selected.filter(i => i !== 'all'), o.value]
-                                                : selected.filter(i => i !== o.value);
-                                            onChange(next.length === 0 ? ['all'] : next);
-                                        }}
-                                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                    />
-                                    <span className="text-xs font-medium text-gray-600 dark:text-gray-300">{o.label}</span>
-                                </div>
-                            ))}
-                        </div>
-                    </motion.div>
+                    <>
+                        <div className="fixed inset-0 z-[200]" onClick={() => setIsOpen(false)} />
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.95, opacity: 0 }}
+                            className="absolute top-full mt-2 left-0 w-52 bg-white border border-gray-200 rounded-xl shadow-2xl p-2 z-[210]"
+                        >
+
+
+                            <div className="space-y-1 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
+                                <button
+                                    onClick={() => { onChange(['all']); setIsOpen(false); }}
+                                    className={`w-full text-left px-3 py-1.5 text-[10px] font-bold rounded-lg transition-colors ${selected.includes('all') ? 'bg-indigo-500 text-white' : 'text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                                >
+                                    Show All
+                                </button>
+                                {options.map((o) => (
+                                    <div key={o.value} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={selected.includes(o.value)}
+                                            onChange={(e) => {
+                                                const next = e.target.checked
+                                                    ? [...selected.filter(i => i !== 'all'), o.value]
+                                                    : selected.filter(i => i !== o.value);
+                                                onChange(next.length === 0 ? ['all'] : next);
+                                            }}
+                                            className="rounded border-gray-300 text-indigo-500 focus:ring-indigo-500 w-3 h-3"
+                                        />
+                                        <span className="text-[10px] font-medium text-gray-600 dark:text-gray-300">{o.label}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </motion.div>
+                    </>
                 )}
             </AnimatePresence>
         </div>
     );
 }
 
-function CardSelect({ label, options, value, onChange }: { label: string; options: string[]; value: string; onChange?: (v: string) => void }) {
+
+function CardSelect({ label, options, value, onChange, variant = 'light' }: { label: string; options: string[]; value: string; onChange?: (v: string) => void; variant?: 'light' | 'dark' }) {
     const [isOpen, setIsOpen] = useState(false);
     const buttonRef = React.useRef<HTMLButtonElement>(null);
-    const [dropdownPos, setDropdownPos] = React.useState({ top: 0, right: 0 });
 
     const handleOpen = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (buttonRef.current) {
-            const rect = buttonRef.current.getBoundingClientRect();
-            setDropdownPos({
-                top: rect.bottom + 8,
-                right: window.innerWidth - rect.right,
-            });
-        }
         setIsOpen(!isOpen);
     };
 
+    // Light variant: for white backgrounds (gray text, gray bg)
+    // Dark variant: for colored/dark backgrounds (white text, white/transparent bg)
+    const labelClass = variant === 'dark'
+        ? "text-[8px] font-black text-white/70 uppercase tracking-[0.15em] mb-1"
+        : "text-[8px] font-black text-gray-500 uppercase tracking-[0.15em] mb-1";
+
+    const buttonClass = variant === 'dark'
+        ? "flex items-center gap-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm border border-white/30 rounded-xl px-3 py-1.5 text-[10px] font-black uppercase text-white transition-all shadow-sm group/btn"
+        : "flex items-center gap-2 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-xl px-3 py-1.5 text-[10px] font-black uppercase text-gray-700 transition-all shadow-sm group/btn";
+
+    const arrowClass = variant === 'dark'
+        ? `text-[8px] text-white/60 group-hover/btn:text-white transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`
+        : `text-[8px] text-gray-400 group-hover/btn:text-gray-600 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`;
+
     return (
-        <div className="relative flex flex-col items-end">
-            <span className="text-[8px] font-black text-white/60 uppercase tracking-[0.15em] mb-1">{label}</span>
+        <div className="relative flex flex-col items-start min-w-[80px]">
+            <span className={labelClass}>{label}</span>
             <button
                 ref={buttonRef}
                 onClick={handleOpen}
-                className="flex items-center gap-2 bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl px-3 py-1.5 text-[10px] font-black uppercase text-white hover:bg-white/30 transition-all shadow-sm group/btn"
+                className={buttonClass}
             >
                 {value}
-                <span className={`text-[8px] text-white/60 group-hover/btn:text-white transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}>▼</span>
+                <span className={arrowClass}>▼</span>
             </button>
             <AnimatePresence>
                 {isOpen && (
@@ -1087,18 +1421,19 @@ function CardSelect({ label, options, value, onChange }: { label: string; option
                             initial={{ opacity: 0, y: 10, scale: 0.95 }}
                             animate={{ opacity: 1, y: 0, scale: 1 }}
                             exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                            style={{ top: dropdownPos.top, right: dropdownPos.right }}
-                            className="fixed w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl p-2 z-[210] overflow-hidden"
+                            className="absolute top-full mt-2 right-0 w-56 bg-white border border-gray-200 rounded-xl shadow-2xl p-1.5 z-[210] overflow-hidden"
                         >
-                            {options.map(o => (
-                                <button
-                                    key={o}
-                                    onClick={() => { onChange?.(o); setIsOpen(false); }}
-                                    className={`w-full text-left px-4 py-2.5 text-[10px] font-black uppercase rounded-lg transition-colors ${value === o ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
-                                >
-                                    {o}
-                                </button>
-                            ))}
+                            <div className="max-h-80 overflow-y-auto custom-scrollbar space-y-0.5">
+                                {options.map(o => (
+                                    <button
+                                        key={o}
+                                        onClick={() => { onChange?.(o); setIsOpen(false); }}
+                                        className={`w-full text-left px-4 py-2 text-[10px] font-black uppercase rounded-lg transition-colors ${value === o ? 'bg-indigo-500 text-white shadow-md' : 'text-gray-600 hover:bg-indigo-50 hover:text-indigo-600'}`}
+                                    >
+                                        {o}
+                                    </button>
+                                ))}
+                            </div>
                         </motion.div>
                     </>
                 )}
@@ -1106,6 +1441,8 @@ function CardSelect({ label, options, value, onChange }: { label: string; option
         </div>
     );
 }
+
+
 
 
 function KPICard({ label, value, unit, trend, gradient, scope, onScopeChange, options }: { label: string; value: any; unit: string; trend: string; gradient: string; scope: string; onScopeChange: (v: string) => void; options: string[] }) {
@@ -1130,13 +1467,22 @@ function KPICard({ label, value, unit, trend, gradient, scope, onScopeChange, op
                         options={options}
                         value={scope}
                         onChange={onScopeChange}
+                        variant="dark"
                     />
+
                 </div>
-                <div className="flex items-center justify-between mt-auto">
-                    <div className="bg-white/15 backdrop-blur-md rounded-2xl py-1 sm:py-2 px-2 sm:px-4 self-start border border-white/10">
-                        <span className="text-[9px] sm:text-xs font-black text-white uppercase tracking-tighter">{trend}</span>
+                <div className="flex items-center justify-between mt-auto pt-2">
+                    <div className="bg-white/10 backdrop-blur-md rounded-2xl py-1.5 px-4 self-start border border-white/10">
+                        <span className="text-[10px] sm:text-xs font-black text-white uppercase tracking-tight">{trend}</span>
                     </div>
-                    <span className="text-[8px] font-black text-white/30 uppercase">LIVE TRACE • OK</span>
+                    <div className="flex flex-col items-end opacity-40">
+                        <span className="text-[7px] font-black text-white uppercase tracking-[0.2em]">DATA VERIFIED</span>
+                        <div className="flex gap-0.5 mt-0.5">
+                            <div className="w-1 h-1 bg-white rounded-full animate-pulse" />
+                            <div className="w-1 h-1 bg-white rounded-full opacity-50" />
+                            <div className="w-1 h-1 bg-white rounded-full opacity-30" />
+                        </div>
+                    </div>
                 </div>
             </div>
             <div className="absolute top-0 right-0 p-4 opacity-10 transform translate-x-1/4 -translate-y-1/4">
@@ -1149,13 +1495,16 @@ function KPICard({ label, value, unit, trend, gradient, scope, onScopeChange, op
 function ChartContainer({ title, children, controls }: { title: string; children: React.ReactNode; controls?: React.ReactNode }) {
     return (
         <div className="bg-white dark:bg-gray-950 border border-gray-100 dark:border-gray-800 rounded-[2.5rem] p-4 lg:p-8 shadow-sm hover:shadow-2xl transition-all duration-500 overflow-visible relative group/card flex-1">
-            <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6 lg:mb-8">
-                <h3 className="text-base lg:text-lg font-black text-gray-800 dark:text-white flex items-center gap-3">
-                    <span className="w-1.5 h-6 bg-blue-600 rounded-full shadow-[0_0_10px_rgba(37,99,235,0.5)]" />
-                    {title}
-                </h3>
+            <div className="flex flex-col xl:flex-row justify-between xl:items-end gap-6 mb-8">
+                <div className="space-y-1">
+                    <h3 className="text-lg lg:text-xl font-black text-gray-900 dark:text-white flex items-center gap-3">
+                        <span className="w-1 h-6 bg-blue-600 rounded-full shadow-[0_0_15px_rgba(37,99,235,0.4)]" />
+                        {title}
+                    </h3>
+                    <div className="w-12 h-1 bg-blue-100 dark:bg-blue-900/50 rounded-full" />
+                </div>
                 {controls && (
-                    <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex flex-wrap items-end gap-3 xl:justify-end">
                         {controls}
                     </div>
                 )}
@@ -1163,4 +1512,27 @@ function ChartContainer({ title, children, controls }: { title: string; children
             {children}
         </div>
     );
+}
+
+// Custom Styles
+const style = `
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #E2E8F0;
+    border-radius: 10px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #CBD5E1;
+  }
+`;
+
+if (typeof document !== 'undefined') {
+    const styleTag = document.createElement('style');
+    styleTag.innerHTML = style;
+    document.head.appendChild(styleTag);
 }
