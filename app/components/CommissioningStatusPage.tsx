@@ -65,13 +65,38 @@ interface CommissioningSummary {
 const monthColumns = ['apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec', 'jan', 'feb', 'mar'];
 const monthLabels = ['Apr-25', 'May-25', 'Jun-25', 'Jul-25', 'Aug-25', 'Sep-25', 'Oct-25', 'Nov-25', 'Dec-25', 'Jan-26', 'Feb-26', 'Mar-26'];
 
-// Section display name mapping with inclusion/exclusion info
+// Section display name mapping - comprehensive for both Solar and Wind
 const sectionDisplayNames: Record<string, string> = {
+  // Solar Sections
   'A': 'A. Khavda Solar Projects',
   'B': 'B. Rajasthan Solar Projects',
   'C': 'C. Rajasthan Solar Additional 500MW',
-  'D1': 'D1. Khavda Solar Copper + Merchant 50MW',
-  'D2': 'D2. Khavda Solar Internal 650MW'
+  'D1': 'D1. Khavda Solar Copper + Merchant 50MW (Excluded)',
+  'D2': 'D2. Khavda Solar Internal 650MW (Excluded)',
+  // Wind Sections  
+  'A_Wind': 'A. Khavda Wind Projects',
+  'B_Wind': 'B. Khavda Wind Internal 421MW (Excluded)',
+  'C_Wind': 'C. Mundra Wind 76MW',
+  'D_Wind': 'D. Mundra Wind Internal 224.4MW (Excluded)',
+};
+
+// Category display name mapping for cleaner dropdown labels WITH section prefixes
+const categoryDisplayNames: Record<string, string> = {
+  // Solar Categories - A, B, C, D1, D2 prefixes
+  'Khavda Solar Projects': 'A. Khavda Solar Projects',
+  'Rajasthan Solar Projects': 'B. Rajasthan Solar Projects',
+  'Rajasthan Solar Additional 500MW': 'C. Rajasthan Solar Additional 500MW',
+  'Khavda Solar Copper + Merchant 50MW': 'D1. Khavda Solar Copper (Excluded)',
+  'Khavda Solar Internal 650MW': 'D2. Khavda Solar Internal (Excluded)',
+  // Wind Categories - A, B, C, D prefixes
+  'Khavda Wind Projects': 'A. Khavda Wind Projects',
+  'Khavda Wind Internal 421MW': 'B. Khavda Wind Internal (Excluded)',
+  'Mundra Wind 76MW': 'C. Mundra Wind 76MW',
+  'Mundra Wind Internal 224.4MW': 'D. Mundra Wind Internal (Excluded)',
+};
+
+const getCategoryDisplayName = (category: string): string => {
+  return categoryDisplayNames[category] || category;
 };
 
 // Section inclusion/exclusion rules for calculations
@@ -94,14 +119,22 @@ const getSectionDisplayName = (section: string): string => {
 // Hierarchy Definition
 const HIERARCHY = {
   SOLAR: {
-    title: 'AGEL Overall Solar FY 2025–26 (A + B + C)',
+    title: '● AGEL Overall Solar FY 2025–26 (A + B + C)',
     key: 'Solar',
+    color: 'from-orange-500 to-amber-500',
+    bgLight: 'bg-orange-50 dark:bg-orange-900/20',
+    borderColor: 'border-orange-200 dark:border-orange-800',
+    textColor: 'text-orange-900 dark:text-orange-100',
     sections: ['A', 'B', 'C', 'D1', 'D2']
   },
   WIND: {
-    title: 'AGEL Overall Wind FY 2025–26 (A + C)',
+    title: '◆ AGEL Overall Wind FY 2025–26 (A + C)',
     key: 'Wind',
-    sections: ['A', 'C', 'D', 'B'] // Including B just in case it appears in Wind
+    color: 'from-cyan-500 to-teal-500',
+    bgLight: 'bg-cyan-50 dark:bg-cyan-900/20',
+    borderColor: 'border-cyan-200 dark:border-cyan-800',
+    textColor: 'text-cyan-900 dark:text-cyan-100',
+    sections: ['A', 'C', 'D', 'B']
   }
 };
 
@@ -175,29 +208,116 @@ export default function CommissioningStatusPage() {
     },
   });
 
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
+
+  // Toggle section expansion
+  const toggleSection = (sectionId: string) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [sectionId]: !prev[sectionId]
+    }));
+  };
+
+  // Expand all sections by default on load or when search changes
+  useEffect(() => {
+    if (projects.length > 0) {
+      const allSections: Record<string, boolean> = {};
+      Object.keys(sectionDisplayNames).forEach(k => {
+        allSections[k] = true;
+      });
+      // Also handle section values from projects if they don't match keys exactly
+      projects.forEach((p: { section: string | number; }) => {
+        allSections[`Solar-${p.section}`] = true;
+        allSections[`Wind-${p.section}`] = true;
+        allSections[p.section] = true;
+      });
+      setExpandedSections(allSections);
+    }
+  }, [projects.length]);
+
   // Get unique values for filters
   const filterOptions = useMemo(() => {
-    const categories = [...new Set(projects.map((p: CommissioningProject) => p.category))] as string[];
     const projectTypes = [...new Set(projects.map((p: CommissioningProject) => p.projectType))] as string[];
     const planActuals = [...new Set(projects.map((p: CommissioningProject) => p.planActual))] as string[];
     const spvs = [...new Set(projects.map((p: CommissioningProject) => p.spv))] as string[];
 
-    // Get unique sections and sort in proper order (A, B, C, D1, D2)
-    const sectionsSet = new Set(projects.map((p: CommissioningProject) => p.section));
-    const sectionOrder = ['A', 'B', 'C', 'D1', 'D2'];
-    const sections = sectionOrder.filter(s => sectionsSet.has(s));
+    // Get all unique categories (original full names)
+    const allCategories = [...new Set(projects.map((p: CommissioningProject) => p.category))] as string[];
 
-    return { categories, projectTypes, planActuals, spvs, sections };
-  }, [projects]);
+    // Define order for Solar sections (A, B, C, D1, D2)
+    const solarOrder = [
+      'Khavda Solar Projects',           // A
+      'Rajasthan Solar Projects',         // B
+      'Rajasthan Solar Additional 500MW', // C
+      'Khavda Solar Copper + Merchant 50MW', // D1
+      'Khavda Solar Internal 650MW'       // D2
+    ];
 
-  // Filtered projects
+    // Define order for Wind sections (A, B, C, D)
+    const windOrder = [
+      'Khavda Wind Projects',            // A
+      'Khavda Wind Internal 421MW',      // B
+      'Mundra Wind 76MW',                // C
+      'Mundra Wind Internal 224.4MW'     // D
+    ];
+
+    // Sort categories by predefined order
+    const sortByOrder = (categories: string[], order: string[]) => {
+      return order.filter(item => categories.includes(item));
+    };
+
+    // Group and sort categories by Solar/Wind
+    const solarCategories = sortByOrder(allCategories.filter(c => c.toLowerCase().includes('solar')), solarOrder);
+    const windCategories = sortByOrder(allCategories.filter(c => c.toLowerCase().includes('wind')), windOrder);
+
+    // Filter categories based on selected category type (already sorted)
+    let filteredCategories = [...solarCategories, ...windCategories]; // All in order
+    if (filters.category === 'solar') {
+      filteredCategories = solarCategories;
+    } else if (filters.category === 'wind') {
+      filteredCategories = windCategories;
+    }
+
+    return {
+      projectTypes,
+      planActuals,
+      spvs,
+      solarCategories,
+      windCategories,
+      filteredCategories // Sections to show based on category type (SORTED)
+    };
+  }, [projects, filters.category]);
+
+  // Reset section when category type changes and section doesn't match
+  const handleCategoryTypeChange = (newCategoryType: string) => {
+    setFilters(prev => {
+      // If section is selected and doesn't match new category type, clear it
+      if (prev.section) {
+        const sectionCategory = filterOptions.filteredCategories.find(c =>
+          c === prev.section || c.includes(prev.section)
+        );
+        if (newCategoryType === 'solar' && sectionCategory && !sectionCategory.toLowerCase().includes('solar')) {
+          return { ...prev, category: newCategoryType, section: '' };
+        }
+        if (newCategoryType === 'wind' && sectionCategory && !sectionCategory.toLowerCase().includes('wind')) {
+          return { ...prev, category: newCategoryType, section: '' };
+        }
+      }
+      return { ...prev, category: newCategoryType };
+    });
+  };
+
+  // Filtered projects - now filters by category TYPE (solar/wind) instead of exact match
   const filteredProjects = useMemo(() => {
     return projects.filter((p: CommissioningProject) => {
-      if (filters.category && p.category !== filters.category) return false;
+      // Filter by category TYPE (solar/wind)
+      if (filters.category === 'solar' && !p.category.toLowerCase().includes('solar')) return false;
+      if (filters.category === 'wind' && !p.category.toLowerCase().includes('wind')) return false;
       if (filters.projectType && p.projectType !== filters.projectType) return false;
       if (filters.planActual && p.planActual !== filters.planActual) return false;
       if (filters.spv && p.spv !== filters.spv) return false;
-      if (filters.section && p.section !== filters.section) return false;
+      // Filter by section (exact category match)
+      if (filters.section && p.category !== filters.section) return false;
       return true;
     });
   }, [projects, filters]);
@@ -421,19 +541,27 @@ export default function CommissioningStatusPage() {
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs - Enhanced with icons and color coding */}
       <div className="border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-        <nav className="flex gap-4">
-          {['overview', 'solar', 'wind'].map((tab) => (
+        <nav className="flex gap-2">
+          {[
+            { key: 'overview', label: '▣ Overall Summary', color: 'blue' },
+            { key: 'solar', label: '● Solar Projects', color: 'orange' },
+            { key: 'wind', label: '◆ Wind Projects', color: 'cyan' }
+          ].map((tab) => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab as any)}
-              className={`py-2 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === tab
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key as any)}
+              className={`py-3 px-5 text-sm font-bold border-b-3 transition-all rounded-t-lg ${activeTab === tab.key
+                ? tab.color === 'orange'
+                  ? 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400'
+                  : tab.color === 'cyan'
+                    ? 'border-cyan-500 bg-cyan-50 text-cyan-700 dark:bg-cyan-900/20 dark:text-cyan-400'
+                    : 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
                 }`}
             >
-              {tab === 'overview' ? 'Overall Summary' : tab === 'solar' ? 'Solar Projects' : 'Wind Projects'}
+              {tab.label}
             </button>
           ))}
         </nav>
@@ -486,41 +614,40 @@ export default function CommissioningStatusPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-        <div className="flex flex-wrap gap-4 items-end">
-          <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Category</label>
+      {/* Filters - Responsive Grid */}
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 overflow-visible">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:flex xl:flex-wrap gap-6 items-end">
+          <div className="flex-1 min-w-[140px]">
+            <label className="block text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Category Filter</label>
             <select
               value={filters.category}
-              onChange={(e) => handleFilterChange('category', e.target.value)}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              onChange={(e) => handleCategoryTypeChange(e.target.value)}
+              className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/20"
             >
-              <option value="">All Categories</option>
-              {filterOptions.categories.map((cat: string) => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
+              <option value="">▣ All Categories</option>
+              <option value="solar">● Solar</option>
+              <option value="wind">◆ Wind</option>
             </select>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Section</label>
+          <div className="flex-2 min-w-[240px]">
+            <label className="block text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Project Section</label>
             <select
               value={filters.section}
               onChange={(e) => handleFilterChange('section', e.target.value)}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/20"
             >
-              <option value="">All Sections</option>
-              {filterOptions.sections.map((sec: string) => (
-                <option key={sec} value={sec}>{getSectionDisplayName(sec)}</option>
+              <option value="">▥ All Sections</option>
+              {filterOptions.filteredCategories.map((cat: string) => (
+                <option key={cat} value={cat}>{getCategoryDisplayName(cat)}</option>
               ))}
             </select>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Type</label>
+          <div className="flex-1 min-w-[140px]">
+            <label className="block text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Project Type</label>
             <select
               value={filters.projectType}
               onChange={(e) => handleFilterChange('projectType', e.target.value)}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/20"
             >
               <option value="">All Types</option>
               {filterOptions.projectTypes.map((type: string) => (
@@ -528,75 +655,68 @@ export default function CommissioningStatusPage() {
               ))}
             </select>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Capacity Type</label>
+          <div className="flex-1 min-w-[140px]">
+            <label className="block text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Capacity Point</label>
             <select
               value={filters.planActual}
               onChange={(e) => handleFilterChange('planActual', e.target.value)}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/20"
             >
               {filterOptions.planActuals.map((pa: string) => (
                 <option key={pa} value={pa}>{pa === 'Actual' ? 'Actual / Fcst' : pa}</option>
               ))}
             </select>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">SPV</label>
-            <select
-              value={filters.spv}
-              onChange={(e) => handleFilterChange('spv', e.target.value)}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            >
-              <option value="">All SPVs</option>
-              {filterOptions.spvs.map((spv: string) => (
-                <option key={spv} value={spv}>{spv}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={filters.showExcluded}
-                onChange={(e) => handleFilterChange('showExcluded', e.target.checked)}
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-              />
-              <span className="text-xs text-gray-700 dark:text-gray-300">Show Excluded</span>
+          <div className="flex items-center pb-2">
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <div className="relative flex items-center">
+                <input
+                  type="checkbox"
+                  checked={filters.showExcluded}
+                  onChange={(e) => handleFilterChange('showExcluded', e.target.checked)}
+                  className="w-5 h-5 text-indigo-600 border-gray-300 rounded-lg focus:ring-indigo-500 cursor-pointer"
+                />
+              </div>
+              <span className="text-xs font-black text-gray-500 dark:text-gray-400 uppercase tracking-wide group-hover:text-indigo-600 transition-colors">Show Excluded</span>
             </label>
           </div>
           <button
             onClick={clearFilters}
-            className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white border border-gray-300 dark:border-gray-600 rounded-lg"
+            className="px-6 py-2.5 text-xs font-black uppercase tracking-widest text-gray-400 hover:text-rose-500 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-rose-200 transition-all active:scale-95"
           >
-            Clear Filters
+            Reset Filters
           </button>
         </div>
       </div>
 
-      {/* Summary Cards */}
-      {activeTab === 'overview' && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Capacity (Included)</h3>
-            <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{formatNumber(hierarchicalTotals.total.totalCapacity)} MW</p>
+      {/* Summary Cards - Responsive */}
+      {activeTab === 'overview' && !filters.section && !filters.category && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[2rem] p-6 shadow-xl shadow-blue-500/10 border border-white/10 group hover:-translate-y-1 transition-transform">
+            <h3 className="text-[10px] font-black text-white/60 uppercase tracking-widest mb-1">Total Included Capacity</h3>
+            <p className="text-3xl font-black text-white">{formatNumber(hierarchicalTotals.total.totalCapacity)} <span className="text-lg opacity-60">MW</span></p>
+            <div className="mt-4 h-1 w-12 bg-white/20 rounded-full" />
           </div>
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Cumm till Oct-25</h3>
-            <p className="text-2xl font-bold text-green-600 dark:text-green-400">{formatNumber(hierarchicalTotals.total.cummTillOct)} MW</p>
+          <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-[2rem] p-6 shadow-xl shadow-emerald-500/10 border border-white/10 group hover:-translate-y-1 transition-transform">
+            <h3 className="text-[10px] font-black text-white/60 uppercase tracking-widest mb-1">Achieved till Oct-25</h3>
+            <p className="text-3xl font-black text-white">{formatNumber(hierarchicalTotals.total.cummTillOct)} <span className="text-lg opacity-60">MW</span></p>
+            <div className="mt-4 h-1 w-12 bg-white/20 rounded-full" />
           </div>
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Solar Capacity</h3>
-            <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{formatNumber(hierarchicalTotals.solar.totalCapacity)} MW</p>
+          <div className="bg-gradient-to-br from-orange-400 to-amber-600 rounded-[2rem] p-6 shadow-xl shadow-orange-500/10 border border-white/10 group hover:-translate-y-1 transition-transform">
+            <h3 className="text-[10px] font-black text-white/60 uppercase tracking-widest mb-1">Overall Solar Capacity</h3>
+            <p className="text-3xl font-black text-white">{formatNumber(hierarchicalTotals.solar.totalCapacity)} <span className="text-lg opacity-60">MW</span></p>
+            <div className="mt-4 h-1 w-12 bg-white/20 rounded-full" />
           </div>
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Wind Capacity</h3>
-            <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{formatNumber(hierarchicalTotals.wind.totalCapacity)} MW</p>
+          <div className="bg-gradient-to-br from-cyan-500 to-blue-500 rounded-[2rem] p-6 shadow-xl shadow-cyan-500/10 border border-white/10 group hover:-translate-y-1 transition-transform">
+            <h3 className="text-[10px] font-black text-white/60 uppercase tracking-widest mb-1">Overall Wind Capacity</h3>
+            <p className="text-3xl font-black text-white">{formatNumber(hierarchicalTotals.wind.totalCapacity)} <span className="text-lg opacity-60">MW</span></p>
+            <div className="mt-4 h-1 w-12 bg-white/20 rounded-full" />
           </div>
         </div>
       )}
 
-      {/* PDF-Style Summary Tables */}
-      {activeTab === 'overview' && (
+      {/* PDF-Style Summary Tables - Only show when no specific section/category is selected */}
+      {activeTab === 'overview' && !filters.section && !filters.category && (
         <div className="space-y-6">
           {/* AGEL Overall Solar Summary */}
           <SummaryTable
@@ -632,19 +752,25 @@ export default function CommissioningStatusPage() {
       )}
 
       {/* Hierarchy Breadcrumb */}
-      <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-sm text-blue-800 dark:text-blue-300 font-medium">
+      <div className={`rounded-lg p-3 text-sm font-medium ${filters.section || filters.category
+        ? 'bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
+        : 'bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300'
+        }`}>
         <span>AGEL Overall FY 2025–26</span>
         {filters.category && (
           <>
             <span className="mx-2">→</span>
-            <span>{filters.category.includes('Solar') ? 'Solar' : filters.category.includes('Wind') ? 'Wind' : filters.category}</span>
+            <span className="font-bold">{filters.category === 'solar' ? '● Solar' : '◆ Wind'}</span>
           </>
         )}
         {filters.section && (
           <>
             <span className="mx-2">→</span>
-            <span>Section {filters.section}</span>
+            <span className="font-bold">{getCategoryDisplayName(filters.section)}</span>
           </>
+        )}
+        {(filters.section || filters.category) && (
+          <span className="ml-3 text-xs opacity-75">(Filtered View - Clear filters to see overall summary)</span>
         )}
       </div>
 
@@ -659,30 +785,30 @@ export default function CommissioningStatusPage() {
           </span>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead className="bg-gray-50 dark:bg-gray-900">
+        <div className="overflow-x-auto overflow-y-auto max-h-[800px] border dark:border-gray-700 rounded-lg">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 border-collapse">
+            <thead className="bg-gray-100 dark:bg-gray-900 sticky top-0 z-30 shadow-sm">
               <tr>
-                <th className="sticky left-0 z-10 bg-gray-50 dark:bg-gray-900 px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">S.No</th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Project Name</th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">SPV</th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Type</th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Location/PSS</th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Capacity</th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Capacity Type</th>
+                <th className="sticky left-0 z-40 bg-gray-100 dark:bg-gray-900 px-3 py-4 text-left text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">S.No</th>
+                <th className="sticky left-[52px] z-40 px-3 py-4 text-left text-[10px] font-black text-gray-800 dark:text-white uppercase border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 whitespace-nowrap shadow-[2px_0_5px_rgba(0,0,0,0.05)]">Project Name</th>
+                <th className="px-3 py-4 text-left text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900">SPV</th>
+                <th className="px-3 py-4 text-left text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900">Type</th>
+                <th className="px-3 py-4 text-left text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Location/PSS</th>
+                <th className="px-3 py-4 text-left text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Capacity</th>
+                <th className="px-3 py-4 text-left text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Capacity Type</th>
                 {monthLabels.map((month, idx) => (
-                  <th key={idx} className="px-2 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{month}</th>
+                  <th key={idx} className="px-2 py-4 text-center text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800 min-w-[70px]">{month}</th>
                 ))}
-                <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Total</th>
-                <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Cumm till Oct</th>
-                <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Q1</th>
-                <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Q2</th>
-                <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Q3</th>
-                <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Q4</th>
-                {isAdmin && <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>}
+                <th className="px-3 py-4 text-center text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Total</th>
+                <th className="px-3 py-4 text-center text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Cumm Oct</th>
+                <th className="px-3 py-4 text-center text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Q1</th>
+                <th className="px-3 py-4 text-center text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Q2</th>
+                <th className="px-3 py-4 text-center text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Q3</th>
+                <th className="px-3 py-4 text-center text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Q4</th>
+                {isAdmin && <th className="px-3 py-4 text-center text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Actions</th>}
               </tr>
             </thead>
-            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+            <tbody className="bg-white dark:bg-gray-850 divide-y divide-gray-100 dark:divide-gray-800">
               {tabProjects.length === 0 ? (
                 <tr>
                   <td colSpan={20} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
@@ -704,9 +830,9 @@ export default function CommissioningStatusPage() {
 
                   return (
                     <React.Fragment key={`group-${groupKey}`}>
-                      {/* Major Group Header (e.g. Overall Solar) */}
-                      <tr className="bg-amber-100 dark:bg-amber-900/30 border-y-2 border-amber-200 dark:border-amber-800">
-                        <td colSpan={21} className="px-4 py-3 text-base font-bold text-amber-900 dark:text-amber-100 uppercase tracking-wide">
+                      {/* Major Group Header (e.g. Overall Solar) - Color Coded */}
+                      <tr className={`bg-gradient-to-r ${groupConfig.color} border-y-2 ${groupConfig.borderColor}`}>
+                        <td colSpan={21} className="px-4 py-4 text-lg font-black text-white uppercase tracking-wide shadow-sm">
                           {groupConfig.title}
                         </td>
                       </tr>
@@ -723,116 +849,158 @@ export default function CommissioningStatusPage() {
 
                         return (
                           <React.Fragment key={`sec-${groupKey}-${section}`}>
-                            {/* Section Header */}
-                            <tr className="bg-gray-100 dark:bg-gray-700/50">
-                              <td colSpan={21} className="px-4 py-2 text-sm font-bold text-gray-800 dark:text-gray-200">
-                                {getSectionDisplayName(section)}
-                                {!anyIncluded && (
-                                  <span className="ml-3 px-2 py-0.5 text-xs bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-300 rounded border border-gray-300 dark:border-gray-500 uppercase tracking-wider">
-                                    Excluded (Display Only)
+                            <tr
+                              className={`${groupConfig.bgLight} ${groupConfig.borderColor} border-l-4 cursor-pointer hover:brightness-95 transition-all`}
+                              onClick={() => toggleSection(`${groupKey}-${section}`)}
+                            >
+                              <td colSpan={21} className={`px-4 py-3 text-sm font-bold ${groupConfig.textColor}`}>
+                                <div className="flex items-center justify-between w-full">
+                                  <span className="flex items-center gap-3">
+                                    <span className={`transition-transform duration-200 ${expandedSections[`${groupKey}-${section}`] ? 'rotate-90' : ''}`}>
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
+                                      </svg>
+                                    </span>
+                                    <span className={`w-2 h-2 rounded-full ${groupKey === 'Solar' ? 'bg-orange-500' : 'bg-cyan-500'}`}></span>
+                                    {getSectionDisplayName(section)}
+                                    {!anyIncluded && (
+                                      <span className="px-2 py-0.5 text-xs bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-300 rounded-full border border-gray-300 dark:border-gray-500 uppercase tracking-wider">
+                                        Excluded (Display Only)
+                                      </span>
+                                    )}
+                                    {anyIncluded && (
+                                      <span className="px-2 py-0.5 text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 rounded-full border border-green-200 dark:border-green-800 uppercase tracking-wider">
+                                        ✓ Included in Total
+                                      </span>
+                                    )}
                                   </span>
-                                )}
-                                {anyIncluded && (
-                                  <span className="ml-3 px-2 py-0.5 text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 rounded border border-green-200 dark:border-green-800 uppercase tracking-wider">
-                                    Included
+                                  <span className="text-xs uppercase opacity-60 font-medium">
+                                    {expandedSections[`${groupKey}-${section}`] ? 'Collapse' : 'Expand'} ({sectionProjects.length} Projects)
                                   </span>
-                                )}
+                                </div>
                               </td>
                             </tr>
 
-                            {/* Projects */}
-                            {sectionProjects.map((project, idx) => (
+                            {/* Projects - with zebra striping - Only show if expanded */}
+                            {expandedSections[`${groupKey}-${section}`] && sectionProjects.map((project, idx) => (
                               <tr
                                 key={project.id || `${groupKey}-${section}-${idx}`}
                                 className={`
-                                  ${!project.includedInTotal ? 'bg-gray-50 text-gray-500' : 'bg-white text-gray-900'}
-                                  dark:bg-gray-800 dark:text-gray-100
+                                  ${!project.includedInTotal
+                                    ? 'bg-gray-50/50 text-gray-400 dark:bg-gray-800/50 dark:text-gray-500'
+                                    : idx % 2 === 0
+                                      ? 'bg-white dark:bg-gray-800'
+                                      : 'bg-gray-50 dark:bg-gray-850'}
+                                  text-gray-900 dark:text-gray-100
                                   border-b border-gray-100 dark:border-gray-700
+                                  hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors
                                 `}
                               >
-                                <td className="sticky left-0 z-10 bg-inherit px-3 py-2 text-sm">
+                                <td className="sticky left-0 z-10 bg-inherit px-3 py-2.5 text-sm font-black text-gray-400 dark:text-gray-500 border-r border-gray-100 dark:border-gray-800 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
                                   {project.sno}
                                 </td>
-                                <td className="px-3 py-2 text-sm whitespace-nowrap">{project.projectName}</td>
-                                <td className="px-3 py-2 text-sm">{project.spv}</td>
-                                <td className="px-3 py-2 text-sm">
-                                  {/* Type Badges */}
-                                  <span className={`px-2 py-1 rounded text-xs font-medium ${project.projectType === 'PPA' ? 'bg-blue-100 text-blue-800' :
-                                    project.projectType === 'Merchant' ? 'bg-green-100 text-green-800' :
-                                      'bg-purple-100 text-purple-800'
+                                <td className="sticky left-[52px] z-10 bg-inherit px-3 py-2.5 text-sm whitespace-nowrap shadow-[2px_0_5px_rgba(0,0,0,0.05)] border-r border-gray-100 dark:border-gray-700">
+                                  <div className="flex items-center gap-2 group">
+                                    <div className={`p-1.5 rounded-md shadow-sm border ${project.category.toLowerCase().includes('solar')
+                                      ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-100 dark:border-orange-800'
+                                      : 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-100 dark:border-cyan-800'
+                                      }`}>
+                                      {project.category.toLowerCase().includes('solar') ? (
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-orange-500" viewBox="0 0 20 20" fill="currentColor">
+                                          <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+                                        </svg>
+                                      ) : (
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-cyan-500" viewBox="0 0 20 20" fill="currentColor">
+                                          <path d="M5.5 13a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 13H11V9.413l1.293 1.293a1 1 0 101.414-1.414l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 101.414 1.414L9 9.414V13H5.5z" />
+                                          <path d="M9 13h2v5a1 1 0 11-2 0v-5z" />
+                                        </svg>
+                                      )}
+                                    </div>
+                                    <span className="font-bold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{project.projectName}</span>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2.5 text-sm text-gray-600 dark:text-gray-400">{project.spv}</td>
+                                <td className="px-3 py-2.5 text-sm">
+                                  {/* Type Badges - Enhanced */}
+                                  <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${project.projectType === 'PPA' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' :
+                                    project.projectType === 'Merchant' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300' :
+                                      'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
                                     }`}>
                                     {project.projectType}
                                   </span>
                                 </td>
-                                <td className="px-3 py-2 text-sm">{project.plotLocation}</td>
-                                {/* Highlighting Capacity and Total for visual scan */}
-                                <td className="px-3 py-2 text-sm font-semibold">{formatNumber(project.capacity)}</td>
-                                <td className="px-3 py-2 text-sm">
-                                  <span className={`px-2 py-1 rounded text-xs font-medium ${project.planActual === 'Plan' ? 'bg-gray-100 text-gray-800' :
-                                    project.planActual === 'Rephase' ? 'bg-yellow-100 text-yellow-800' :
-                                      'bg-green-100 text-green-800'
+                                <td className="px-3 py-2.5 text-sm text-gray-600 dark:text-gray-400">{project.plotLocation}</td>
+                                {/* Capacity - Highlighted */}
+                                <td className="px-3 py-2.5 text-sm font-bold text-gray-900 dark:text-white">{formatNumber(project.capacity)}</td>
+                                <td className="px-3 py-2.5 text-sm">
+                                  <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${project.planActual === 'Plan' ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' :
+                                    project.planActual === 'Rephase' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' :
+                                      'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
                                     }`}>
-                                    {project.planActual === 'Actual' ? 'Actual / Fcst' : project.planActual}
+                                    {project.planActual === 'Actual' ? '✓ Actual/Fcst' : project.planActual}
                                   </span>
                                 </td>
                                 {monthColumns.map(m => (
-                                  <td key={m} className={`px-2 py-2 text-sm text-center ${!project.includedInTotal ? 'opacity-50' : ''}`}>
+                                  <td key={m} className={`px-2 py-2.5 text-sm text-center ${!project.includedInTotal ? 'opacity-40' : ''}`}>
                                     {formatNumber((project as any)[m])}
                                   </td>
                                 ))}
-                                <td className="px-3 py-2 text-sm text-center font-bold bg-gray-50 dark:bg-gray-900/50">{formatNumber(project.totalCapacity)}</td>
-                                <td className="px-3 py-2 text-sm text-center font-semibold text-blue-600 dark:text-blue-400">{formatNumber(project.cummTillOct)}</td>
-                                {/* Quarters */}
-                                <td className="px-3 py-2 text-sm text-center">{formatNumber(project.q1)}</td>
-                                <td className="px-3 py-2 text-sm text-center">{formatNumber(project.q2)}</td>
-                                <td className="px-3 py-2 text-sm text-center">{formatNumber(project.q3)}</td>
-                                <td className="px-3 py-2 text-sm text-center">{formatNumber(project.q4)}</td>
+                                <td className="px-3 py-2.5 text-sm text-center font-bold bg-gray-100 dark:bg-gray-900/70 text-gray-900 dark:text-white">{formatNumber(project.totalCapacity)}</td>
+                                <td className="px-3 py-2.5 text-sm text-center font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20">{formatNumber(project.cummTillOct)}</td>
+                                {/* Quarters - Subtle background */}
+                                <td className="px-3 py-2.5 text-sm text-center bg-gray-50 dark:bg-gray-800/50">{formatNumber(project.q1)}</td>
+                                <td className="px-3 py-2.5 text-sm text-center bg-gray-50 dark:bg-gray-800/50">{formatNumber(project.q2)}</td>
+                                <td className="px-3 py-2.5 text-sm text-center bg-gray-50 dark:bg-gray-800/50">{formatNumber(project.q3)}</td>
+                                <td className="px-3 py-2.5 text-sm text-center bg-gray-50 dark:bg-gray-800/50">{formatNumber(project.q4)}</td>
 
                                 {isAdmin && (
-                                  <td className="px-3 py-2 text-sm text-center">
-                                    <div className="flex gap-1 justify-center">
-                                      <button onClick={() => handleEditProject(project)} className="text-blue-600 hover:underline">Edit</button>
-                                      <button onClick={() => handleDeleteProject(project.id!)} className="text-red-600 hover:underline ml-2">Del</button>
+                                  <td className="px-3 py-2.5 text-sm text-center">
+                                    <div className="flex gap-2 justify-center">
+                                      <button onClick={() => handleEditProject(project)} className="text-blue-600 hover:text-blue-800 font-medium">Edit</button>
+                                      <button onClick={() => handleDeleteProject(project.id!)} className="text-red-600 hover:text-red-800 font-medium">Del</button>
                                     </div>
                                   </td>
                                 )}
                               </tr>
-                            ))}
+                            ))
+                            }
 
-                            {/* SECTION SUB-TOTAL */}
-                            {anyIncluded && (
-                              <tr className="bg-gray-100 dark:bg-gray-700 border-t border-gray-300 dark:border-gray-600 font-semibold text-sm">
-                                <td colSpan={5} className="px-3 py-2 text-right">Section {section} Subtotal:</td>
-                                <td className="px-3 py-2">{formatNumber(sectionTotal.capacity)}</td>
-                                <td></td>
-                                {monthColumns.map(m => <td key={m} className="px-2 py-2 text-center">{formatNumber(sectionTotal[m])}</td>)}
-                                <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.totalCapacity)}</td>
-                                <td className="px-3 py-2 text-center text-blue-700 dark:text-blue-300">{formatNumber(sectionTotal.cummTillOct)}</td>
-                                <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.q1)}</td>
-                                <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.q2)}</td>
-                                <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.q3)}</td>
-                                <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.q4)}</td>
-                                {isAdmin && <td></td>}
-                              </tr>
-                            )}
+                            {/* SECTION SUB-TOTAL - Only show if expanded */}
+                            {
+                              expandedSections[`${groupKey}-${section}`] && anyIncluded && (
+                                <tr className={`${groupConfig.bgLight} border-t ${groupConfig.borderColor} font-semibold text-sm`}>
+                                  <td colSpan={5} className={`px-3 py-2 text-right ${groupConfig.textColor}`}>▸ Section {section} Subtotal:</td>
+                                  <td className="px-3 py-2 font-bold">{formatNumber(sectionTotal.capacity)}</td>
+                                  <td></td>
+                                  {monthColumns.map(m => <td key={m} className="px-2 py-2 text-center">{formatNumber(sectionTotal[m])}</td>)}
+                                  <td className="px-3 py-2 text-center font-bold">{formatNumber(sectionTotal.totalCapacity)}</td>
+                                  <td className="px-3 py-2 text-center text-blue-700 dark:text-blue-300 font-bold">{formatNumber(sectionTotal.cummTillOct)}</td>
+                                  <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.q1)}</td>
+                                  <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.q2)}</td>
+                                  <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.q3)}</td>
+                                  <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.q4)}</td>
+                                  {isAdmin && <td></td>}
+                                </tr>
+                              )
+                            }
                           </React.Fragment>
                         );
                       })}
 
-                      {/* GROUP TOTAL (Solar/Wind) */}
-                      <tr className="bg-amber-50 dark:bg-amber-900/20 border-t-2 border-amber-300 dark:border-amber-700 font-bold text-sm">
-                        <td colSpan={5} className="px-3 py-3 text-right text-amber-900 dark:text-amber-100 uppercase">
-                          Total {groupKey} (Included):
+                      {/* GROUP TOTAL (Solar/Wind) - Color coded */}
+                      <tr className={`bg-gradient-to-r ${groupConfig.color} border-t-2 ${groupConfig.borderColor} font-bold text-sm`}>
+                        <td colSpan={5} className="px-3 py-3 text-right text-white uppercase">
+                          ► Total {groupKey} (Included):
                         </td>
-                        <td className="px-3 py-3">{formatNumber(groupTotal.capacity)}</td>
+                        <td className="px-3 py-3 text-white font-black">{formatNumber(groupTotal.capacity)}</td>
                         <td></td>
-                        {monthColumns.map(m => <td key={m} className="px-2 py-3 text-center">{formatNumber(groupTotal[m])}</td>)}
-                        <td className="px-3 py-3 text-center">{formatNumber(groupTotal.totalCapacity)}</td>
-                        <td className="px-3 py-3 text-center text-blue-700 dark:text-blue-300">{formatNumber(groupTotal.cummTillOct)}</td>
-                        <td className="px-3 py-3 text-center">{formatNumber(groupTotal.q1)}</td>
-                        <td className="px-3 py-3 text-center">{formatNumber(groupTotal.q2)}</td>
-                        <td className="px-3 py-3 text-center">{formatNumber(groupTotal.q3)}</td>
-                        <td className="px-3 py-3 text-center">{formatNumber(groupTotal.q4)}</td>
+                        {monthColumns.map(m => <td key={m} className="px-2 py-3 text-center text-white">{formatNumber(groupTotal[m])}</td>)}
+                        <td className="px-3 py-3 text-center text-white font-black">{formatNumber(groupTotal.totalCapacity)}</td>
+                        <td className="px-3 py-3 text-center text-yellow-200 font-black">{formatNumber(groupTotal.cummTillOct)}</td>
+                        <td className="px-3 py-3 text-center text-white">{formatNumber(groupTotal.q1)}</td>
+                        <td className="px-3 py-3 text-center text-white">{formatNumber(groupTotal.q2)}</td>
+                        <td className="px-3 py-3 text-center text-white">{formatNumber(groupTotal.q3)}</td>
+                        <td className="px-3 py-3 text-center text-white">{formatNumber(groupTotal.q4)}</td>
                         {isAdmin && <td></td>}
                       </tr>
                     </React.Fragment>
@@ -845,20 +1013,23 @@ export default function CommissioningStatusPage() {
                 (() => {
                   const grandTotal = calculateTotals(tabProjects.filter((p: { includedInTotal: any; }) => p.includedInTotal));
                   return (
-                    <tr className="bg-gray-800 text-white border-t-4 border-gray-900 font-bold text-base shadow-lg">
-                      <td colSpan={5} className="px-3 py-4 text-right uppercase tracking-wider">
-                        AGEL Overall FY 2025–26 Total:
+                    <tr className="sticky bottom-0 z-40 bg-gray-900 dark:bg-black text-white border-t-2 border-indigo-500 font-bold text-base shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.3)]">
+                      <td colSpan={5} className="px-3 py-4 text-right uppercase tracking-widest bg-gray-900 dark:bg-black">
+                        <div className="flex items-center justify-end gap-2">
+                          <span className="text-indigo-400 text-xl">◆</span>
+                          AGEL Overall FY 2025–26 Total:
+                        </div>
                       </td>
-                      <td className="px-3 py-4">{formatNumber(grandTotal.capacity)}</td>
-                      <td></td>
-                      {monthColumns.map(m => <td key={m} className="px-2 py-4 text-center">{formatNumber(grandTotal[m])}</td>)}
-                      <td className="px-3 py-4 text-center">{formatNumber(grandTotal.totalCapacity)}</td>
-                      <td className="px-3 py-4 text-center text-blue-300">{formatNumber(grandTotal.cummTillOct)}</td>
-                      <td className="px-3 py-4 text-center">{formatNumber(grandTotal.q1)}</td>
-                      <td className="px-3 py-4 text-center">{formatNumber(grandTotal.q2)}</td>
-                      <td className="px-3 py-4 text-center">{formatNumber(grandTotal.q3)}</td>
-                      <td className="px-3 py-4 text-center">{formatNumber(grandTotal.q4)}</td>
-                      {isAdmin && <td></td>}
+                      <td className="px-3 py-4 font-black text-lg bg-gray-900 dark:bg-black">{formatNumber(grandTotal.capacity)}</td>
+                      <td className="bg-gray-900 dark:bg-black"></td>
+                      {monthColumns.map(m => <td key={m} className="px-2 py-4 text-center bg-gray-900 dark:bg-black">{formatNumber(grandTotal[m])}</td>)}
+                      <td className="px-3 py-4 text-center font-black text-lg text-green-400 shadow-inner bg-gray-800/50">{formatNumber(grandTotal.totalCapacity)}</td>
+                      <td className="px-3 py-4 text-center font-black text-lg text-yellow-300 shadow-inner bg-gray-800/50">{formatNumber(grandTotal.cummTillOct)}</td>
+                      <td className="px-3 py-4 text-center bg-gray-900 dark:bg-black">{formatNumber(grandTotal.q1)}</td>
+                      <td className="px-3 py-4 text-center bg-gray-900 dark:bg-black">{formatNumber(grandTotal.q2)}</td>
+                      <td className="px-3 py-4 text-center bg-gray-900 dark:bg-black">{formatNumber(grandTotal.q3)}</td>
+                      <td className="px-3 py-4 text-center bg-gray-900 dark:bg-black">{formatNumber(grandTotal.q4)}</td>
+                      {isAdmin && <td className="bg-gray-900 dark:bg-black"></td>}
                     </tr>
                   );
                 })()
@@ -869,182 +1040,187 @@ export default function CommissioningStatusPage() {
       </div>
 
       {/* Edit Modal */}
-      {editingProject && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Edit Project</h3>
-              <button onClick={() => setEditingProject(null)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="p-4 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Project Name</label>
-                  <input
-                    type="text"
-                    value={editingProject.projectName}
-                    onChange={(e) => setEditingProject({ ...editingProject, projectName: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">SPV</label>
-                  <input
-                    type="text"
-                    value={editingProject.spv}
-                    onChange={(e) => setEditingProject({ ...editingProject, spv: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type</label>
-                  <select
-                    value={editingProject.projectType}
-                    onChange={(e) => setEditingProject({ ...editingProject, projectType: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  >
-                    <option value="PPA">PPA</option>
-                    <option value="Merchant">Merchant</option>
-                    <option value="Group">Group</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Capacity (MW)</label>
-                  <input
-                    type="number"
-                    value={editingProject.capacity}
-                    onChange={(e) => setEditingProject({ ...editingProject, capacity: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
-                </div>
+      {
+        editingProject && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Edit Project</h3>
+                <button onClick={() => setEditingProject(null)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
-              <div className="grid grid-cols-4 gap-2">
-                {monthColumns.map((month, idx) => (
-                  <div key={month}>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{monthLabels[idx]}</label>
+              <div className="p-4 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Project Name</label>
+                    <input
+                      type="text"
+                      value={editingProject?.projectName || ''}
+                      onChange={(e) => setEditingProject(prev => prev ? { ...prev, projectName: e.target.value } : null)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">SPV</label>
+                    <input
+                      type="text"
+                      value={editingProject?.spv || ''}
+                      onChange={(e) => setEditingProject(prev => prev ? { ...prev, spv: e.target.value } : null)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type</label>
+                    <select
+                      value={editingProject?.projectType || 'PPA'}
+                      onChange={(e) => setEditingProject(prev => prev ? { ...prev, projectType: e.target.value } : null)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    >
+                      <option value="PPA">PPA</option>
+                      <option value="Merchant">Merchant</option>
+                      <option value="Group">Group</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Capacity (MW)</label>
                     <input
                       type="number"
-                      value={(editingProject as any)[month] || ''}
-                      onChange={(e) => setEditingProject({ ...editingProject, [month]: parseFloat(e.target.value) || null })}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      value={editingProject?.capacity || 0}
+                      onChange={(e) => setEditingProject(prev => prev ? { ...prev, capacity: parseFloat(e.target.value) || 0 } : null)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     />
                   </div>
-                ))}
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  {monthColumns.map((month, idx) => (
+                    <div key={month}>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{monthLabels[idx]}</label>
+                      <input
+                        type="number"
+                        value={(editingProject as any)?.[month] || ''}
+                        onChange={(e) => setEditingProject(prev => prev ? { ...prev, [month]: parseFloat(e.target.value) || null } : null)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                <button
+                  onClick={() => setEditingProject(null)}
+                  className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white border border-gray-300 dark:border-gray-600 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveEdit}
+                  className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+                >
+                  Save Changes
+                </button>
               </div>
             </div>
-            <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
-              <button
-                onClick={() => setEditingProject(null)}
-                className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white border border-gray-300 dark:border-gray-600 rounded-lg"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveEdit}
-                className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
-              >
-                Save Changes
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Upload Excel Modal */}
-      {showUploadModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg max-w-md w-full">
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Upload Commissioning Excel</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Excel must follow the approved AGEL commissioning template.
-              </p>
-            </div>
+      {
+        showUploadModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg max-w-md w-full">
+              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Upload Commissioning Excel</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Excel must follow the approved AGEL commissioning template.
+                </p>
+              </div>
 
-            <div className="p-6 space-y-4">
-              {!uploadResult ? (
-                <>
-                  <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-blue-500 transition-colors cursor-pointer">
-                    <input
-                      type="file"
-                      accept=".xlsx"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          if (!file.name.endsWith('.xlsx')) {
-                            alert('Only .xlsx files are accepted');
-                            return;
+              <div className="p-6 space-y-4">
+                {!uploadResult ? (
+                  <>
+                    <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-blue-500 transition-colors cursor-pointer">
+                      <input
+                        type="file"
+                        accept=".xlsx"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            if (!file.name.endsWith('.xlsx')) {
+                              alert('Only .xlsx files are accepted');
+                              return;
+                            }
+                            handleExcelUpload(file);
                           }
-                          handleExcelUpload(file);
-                        }
-                      }}
-                      disabled={uploading}
-                      className="hidden"
-                      id="excel-upload"
-                    />
-                    <label htmlFor="excel-upload" className="cursor-pointer block">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mx-auto text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-                      </svg>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">
-                        {uploading ? 'Uploading...' : 'Click to upload or drag and drop'}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">(.xlsx files only)</p>
-                    </label>
-                  </div>
-
-                  <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-xs text-gray-700 dark:text-gray-300">
-                    <strong>Expected columns:</strong> Category, Section, Project Name, SPV, Type, Capacity Type, Apr-25, May-25, ... Mar-26
-                  </div>
-                </>
-              ) : (
-                <div className="space-y-3">
-                  {uploadResult.success ? (
-                    <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
-                      <p className="text-sm font-medium text-green-800 dark:text-green-400">
-                        ✓ Successfully updated {uploadResult.success} row(s)
-                      </p>
+                        }}
+                        disabled={uploading}
+                        className="hidden"
+                        id="excel-upload"
+                      />
+                      <label htmlFor="excel-upload" className="cursor-pointer block">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mx-auto text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                        </svg>
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">
+                          {uploading ? 'Uploading...' : 'Click to upload or drag and drop'}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">(.xlsx files only)</p>
+                      </label>
                     </div>
-                  ) : null}
 
-                  {uploadResult && uploadResult.failed != null && uploadResult.failed > 0 && (
-                    <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg">
-                      <p className="text-sm font-medium text-orange-800 dark:text-orange-400">
-                        ⚠ {uploadResult.failed} row(s) failed
-                      </p>
-                      {uploadResult.errors && uploadResult.errors.length > 0 && (
-                        <ul className="text-xs text-orange-700 dark:text-orange-300 mt-2 space-y-1">
-                          {uploadResult.errors.slice(0, 5).map((err, idx) => (
-                            <li key={idx}>• {err}</li>
-                          ))}
-                          {uploadResult.errors.length > 5 && <li>• ... and {uploadResult.errors.length - 5} more</li>}
-                        </ul>
-                      )}
+                    <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-xs text-gray-700 dark:text-gray-300">
+                      <strong>Expected columns:</strong> Category, Section, Project Name, SPV, Type, Capacity Type, Apr-25, May-25, ... Mar-26
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
+                  </>
+                ) : (
+                  <div className="space-y-3">
+                    {uploadResult.success ? (
+                      <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+                        <p className="text-sm font-medium text-green-800 dark:text-green-400">
+                          ✓ Successfully updated {uploadResult.success} row(s)
+                        </p>
+                      </div>
+                    ) : null}
 
-            <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  setShowUploadModal(false);
-                  setUploadResult(null);
-                }}
-                disabled={uploading}
-                className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-50"
-              >
-                {uploadResult ? 'Close' : 'Cancel'}
-              </button>
+                    {uploadResult && uploadResult.failed != null && uploadResult.failed > 0 && (
+                      <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg">
+                        <p className="text-sm font-medium text-orange-800 dark:text-orange-400">
+                          ⚠ {uploadResult.failed} row(s) failed
+                        </p>
+                        {uploadResult.errors && uploadResult.errors.length > 0 && (
+                          <ul className="text-xs text-orange-700 dark:text-orange-300 mt-2 space-y-1">
+                            {uploadResult.errors.slice(0, 5).map((err, idx) => (
+                              <li key={idx}>• {err}</li>
+                            ))}
+                            {uploadResult.errors.length > 5 && <li>• ... and {uploadResult.errors.length - 5} more</li>}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                <button
+                  onClick={() => {
+                    setShowUploadModal(false);
+                    setUploadResult(null);
+                  }}
+                  disabled={uploading}
+                  className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-50"
+                >
+                  {uploadResult ? 'Close' : 'Cancel'}
+                </button>
+              </div>
+
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
     </div>
   );
 }

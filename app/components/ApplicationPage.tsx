@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import CommissioningStatusPage from '@/app/components/CommissioningStatusPage';
 import CommissioningDashboard from '@/app/components/CommissioningDashboard';
-import LoginPage from '@/app/components/LoginPage';
+import ChatbotPanel from '@/app/components/ChatbotPanel';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 
@@ -252,6 +252,7 @@ const ApplicationPage = () => {
           </div>
         </div>
       </div>
+      <ChatbotPanel />
     </div>
   );
 };
