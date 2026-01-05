@@ -1528,3 +1528,111 @@ def reset_commissioning_data(request: dict):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8002)
+
+# --- Excel Upload Endpoint ---
+
+@app.post("/api/upload-excel")
+async def upload_excel_workbook(
+    file: UploadFile = File(...),
+    fiscalYear: str = Form("FY_25-26")
+):
+    """
+    Upload Excel workbook with multiple sheets.
+    Parses all sheets and imports data into the database.
+    Uses: pd.read_excel(file, sheet_name=None) to read all sheets.
+    """
+    try:
+        # Validate file type
+        if not file.filename.endswith(('.xlsx', '.xls', '.csv')):
+            raise HTTPException(
+                status_code=400, 
+                detail="Invalid file type. Please upload .xlsx, .xls, or .csv file"
+            )
+        
+        # Read file content
+        content = await file.read()
+        
+        # Import parser
+        from excel_parser import parse_excel_workbook, import_projects_to_db
+        
+        # Parse the workbook (reads all sheets)
+        result = parse_excel_workbook(content, file.filename)
+        
+        if result['errors'] and not result['projects']:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to parse file: {result['errors'][:5]}"
+            )
+        
+        # Import to database (clears existing data first)
+        db_result = import_projects_to_db(result['projects'], result.get('summaries'), fiscalYear)
+        
+        if not db_result['success']:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Database import failed: {db_result.get('error')}"
+            )
+            
+        return {
+            "success": True,
+            "message": f"Successfully processed {file.filename}",
+            "projects_imported": db_result['inserted_projects'],
+            "summaries_imported": db_result['inserted_summaries'],
+            "sheets_found": result['sheets_found'],
+            "sheet_count": result['sheet_count'],
+            "parse_errors": result['errors']
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+
+@app.get("/api/upload-status")
+def get_upload_status(fiscalYear: str = Query("FY_25-26")):
+    """
+    Get the current data status for a fiscal year.
+    Shows count of projects and last update time.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Count projects
+        cursor.execute('''
+            SELECT COUNT(*) as total,
+                   SUM(CASE WHEN plan_actual = 'Plan' THEN 1 ELSE 0 END) as plan_count,
+                   SUM(CASE WHEN plan_actual = 'Rephase' THEN 1 ELSE 0 END) as rephase_count,
+                   SUM(CASE WHEN plan_actual = 'Actual' THEN 1 ELSE 0 END) as actual_count
+            FROM commissioning_projects 
+            WHERE fiscal_year = ? AND is_deleted = 0
+        ''', (fiscalYear,))
+        
+        row = cursor.fetchone()
+        
+        # Get last update
+        cursor.execute('''
+            SELECT MAX(updated_at) as last_update 
+            FROM commissioning_projects 
+            WHERE fiscal_year = ?
+        ''', (fiscalYear,))
+        
+        last_update = cursor.fetchone()
+        
+        return {
+            "fiscal_year": fiscalYear,
+            "total_projects": row[0] if row else 0,
+            "plan_count": row[1] if row else 0,
+            "rephase_count": row[2] if row else 0,
+            "actual_count": row[3] if row else 0,
+            "last_update": last_update[0] if last_update else None
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+

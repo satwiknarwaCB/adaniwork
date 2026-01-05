@@ -48,7 +48,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS commissioning_projects (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 fiscal_year TEXT NOT NULL,
-                sno INTEGER NOT NULL,
+                sno INTEGER,
                 project_name TEXT NOT NULL,
                 spv TEXT NOT NULL,
                 project_type TEXT NOT NULL,

@@ -69,6 +69,17 @@ const GRADIENTS = (
             <stop offset="5%" stopColor="#F59E0B" stopOpacity={0.8} />
             <stop offset="95%" stopColor="#D97706" stopOpacity={0.8} />
         </linearGradient>
+        <filter id="shadow" height="130%">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="3" />
+            <feOffset dx="0" dy="2" result="offsetblur" />
+            <feComponentTransfer>
+                <feFuncA type="linear" slope="0.2" />
+            </feComponentTransfer>
+            <feMerge>
+                <feMergeNode />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
     </defs>
 );
 
@@ -130,11 +141,8 @@ export default function CommissioningDashboard() {
     const [modelsGeography, setModelsGeography] = useState('All Sites');
     const [modelsTechnology, setModelsTechnology] = useState('All');
 
-    // KPI Specific Filters
-    const [kpi1Scope, setKpi1Scope] = useState('Overall');
-    const [kpi2Scope, setKpi2Scope] = useState('Overall');
-    const [kpi3Scope, setKpi3Scope] = useState('Overall');
-    const [kpi4Scope, setKpi4Scope] = useState('Overall');
+    // KPI scope derived from global category filter
+    const globalKpiScope = categoryFilter === 'all' ? 'Overall' : categoryFilter === 'solar' ? 'Solar' : 'Wind';
 
     const { data: allProjects = [], isLoading } = useQuery<CommissioningProject[]>({
         queryKey: ['commissioning-projects-all', fiscalYear],
@@ -171,12 +179,11 @@ export default function CommissioningDashboard() {
     };
 
     const overallKpi = getKPIData('Overall');
-    const kpi1 = getKPIData(kpi1Scope);
-    const kpi2 = getKPIData(kpi2Scope);
-    const kpi3 = getKPIData(kpi3Scope);
-    const kpi4 = getKPIData(kpi4Scope);
-
-    const kpiScopes = ['Overall', 'Solar', 'Wind'];
+    // All KPIs now use the same scope from global filter
+    const kpi1 = getKPIData(globalKpiScope);
+    const kpi2 = getKPIData(globalKpiScope);
+    const kpi3 = getKPIData(globalKpiScope);
+    const kpi4 = getKPIData(globalKpiScope);
 
     // Geography/Site Options based on section names
     const geographyOptions = useMemo(() => {
@@ -419,28 +426,25 @@ export default function CommissioningDashboard() {
     if (isLoading) return <div className="p-20 text-center animate-pulse">Initializing Adani BI Engine...</div>;
 
     return (
-        <div className="min-h-screen bg-gray-50/50 dark:bg-[#111] p-4 lg:p-8 space-y-8 font-sans selection:bg-blue-200">
-            {/* Top Glass Header & Primary Filters */}
-            <motion.div
-                initial={{ y: -20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                className="sticky top-0 z-[100] bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border border-gray-200 dark:border-gray-800 rounded-3xl p-5 shadow-2xl"
-            >
-                <div className="flex flex-col lg:flex-row justify-between items-center gap-6">
-                    <div className="flex items-center gap-4">
-                        <div className="p-2 sm:p-3 bg-blue-600 rounded-xl sm:rounded-2xl shadow-lg shadow-blue-500/20">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 sm:h-8 sm:w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="min-h-screen max-w-full overflow-x-hidden p-3 rounded-md space-y-4 sm:space-y-6 font-sans">
+            {/* Corporate Header - Adani Themed */}
+            <div className="z-[100] bg-white dark:bg-[#1F2937] border border-[#D1D5DB] dark:border-gray-700 rounded-lg p-3 sm:p-4 shadow-sm relative">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    {/* Left: Logo, Title, FY selector - all inline */}
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-[#0B74B0] rounded-lg flex-shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                             </svg>
                         </div>
-                        <div>
-                            <h1 className="text-xl sm:text-3xl font-black bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                                Executive Insights
+                        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                            <h1 className="text-base sm:text-lg font-semibold text-[#1F2937] dark:text-white whitespace-nowrap">
+                                AGEL Tracker
                             </h1>
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                                <p className="text-[10px] sm:text-sm font-medium text-gray-400">AGEL Execution Tracker •</p>
+                            <div className="flex items-center gap-2 px-2 py-1 dark:bg-gray-800 rounded-md h-8">
+                                <span className="text-xs font-medium text-[#4B5563] dark:text-gray-400 whitespace-nowrap pt-[2px]">Fiscal Year</span>
                                 <CardSelect
-                                    label="FISCAL YEAR"
+                                    label=""
                                     options={['2024-25', '2025-26', '2026-27']}
                                     value={selectedFY}
                                     onChange={setSelectedFY}
@@ -449,53 +453,47 @@ export default function CommissioningDashboard() {
                         </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-4">
-                        <nav className="flex bg-gray-100 dark:bg-gray-800 p-1.5 rounded-2xl">
-                            {[
-                                { id: 'overview', label: 'Overview', icon: '▣' },
-                                { id: 'solar', label: 'Solar', icon: '☀️' },
-                                { id: 'wind', label: 'Wind', icon: '🌬️' },
-                                { id: 'models', label: 'Models', icon: '💼' },
-                                { id: 'deviation', label: 'Deviation', icon: '⚠️' }
-                            ].map(tab => (
-                                <button
-                                    key={tab.id}
-                                    onClick={() => setActiveDashboard(tab.id as any)}
-                                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all ${activeDashboard === tab.id
-                                        ? 'bg-white dark:bg-gray-700 text-blue-600 shadow-md scale-105'
-                                        : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white'}`}
-                                >
-                                    <span>{tab.icon}</span>
-                                    {tab.label}
-                                </button>
-                            ))}
-                        </nav>
-
-                        <div className="h-8 w-[1px] bg-gray-200 dark:bg-gray-800 hidden lg:block" />
-
-                        <div className="flex items-center gap-3">
-                            <GlobalSlicer
-                                label="Type"
-                                options={['All', 'Solar', 'Wind']}
-                                value={categoryFilter}
-                                onChange={(v: string) => setCategoryFilter(v.toLowerCase() as any)}
-                            />
-                        </div>
-                    </div>
+                    {/* Right: Category Filter */}
+                    <GlobalSlicer
+                        label=""
+                        options={['All', 'Solar', 'Wind']}
+                        value={categoryFilter}
+                        onChange={(v: string) => setCategoryFilter(v.toLowerCase() as any)}
+                    />
                 </div>
-            </motion.div>
+
+                {/* Navigation Tabs - Clean aligned style */}
+                <div className="mt-3 pt-3 border-t border-[#D1D5DB] dark:border-gray-700">
+                    <nav className="flex items-center gap-1 bg-[#F5F7FA] dark:bg-gray-800 p-1 rounded-lg border border-[#D1D5DB] dark:border-gray-700 w-fit overflow-x-auto max-w-full">
+                        {[
+                            { id: 'overview', label: 'Overview' },
+                            { id: 'solar', label: 'Solar' },
+                            { id: 'wind', label: 'Wind' },
+                            { id: 'models', label: 'Models' },
+                            { id: 'deviation', label: 'Deviations' }
+                        ].map(tab => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveDashboard(tab.id as any)}
+                                className={`h-8 px-3 sm:px-4 rounded-md text-xs font-medium transition-all flex items-center whitespace-nowrap ${activeDashboard === tab.id
+                                    ? 'bg-[#0B74B0] text-white shadow-sm'
+                                    : 'text-[#4B5563] dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-[#1F2937]'}`}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
+                    </nav>
+                </div>
+            </div>
 
             {/* KPI Section */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
                 <KPICard
                     label="PPA PORTFOLIO PLAN"
                     value={kpi1.plan}
                     unit="MW"
                     trend={`Total: ${kpi1.projectsCount} Projects`}
                     gradient="from-blue-600 to-indigo-700"
-                    scope={kpi1Scope}
-                    onScopeChange={setKpi1Scope}
-                    options={kpiScopes}
                 />
                 <KPICard
                     label="ACTUAL COMMISSIONING"
@@ -503,9 +501,6 @@ export default function CommissioningDashboard() {
                     unit="MW"
                     trend={`${kpi2.achievement.toFixed(1)}% of Plan`}
                     gradient="from-emerald-500 to-teal-600"
-                    scope={kpi2Scope}
-                    onScopeChange={setKpi2Scope}
-                    options={kpiScopes}
                 />
                 <KPICard
                     label="STATUS PERFORMANCE"
@@ -513,9 +508,6 @@ export default function CommissioningDashboard() {
                     unit="%"
                     trend={kpi3.achievement > 70 ? "Excellent" : "On Track"}
                     gradient="from-indigo-500 to-purple-600"
-                    scope={kpi3Scope}
-                    onScopeChange={setKpi3Scope}
-                    options={kpiScopes}
                 />
                 <KPICard
                     label="EXECUTION DEVIATION"
@@ -523,721 +515,662 @@ export default function CommissioningDashboard() {
                     unit="MW"
                     trend={kpi4.actual >= kpi4.plan ? "Above Target" : "Below Target"}
                     gradient={kpi4.actual >= kpi4.plan ? "from-emerald-400 to-emerald-600" : "from-rose-500 to-red-700"}
-                    scope={kpi4Scope}
-                    onScopeChange={setKpi4Scope}
-                    options={kpiScopes}
                 />
             </div>
 
-            {/* SECTION HEADER */}
-            <div className="flex items-center gap-4 mb-2">
-                <div className="flex-1 h-[1px] bg-gradient-to-r from-transparent via-blue-200 dark:via-blue-900 to-transparent" />
-                <h2 className="text-xs font-black text-blue-600 dark:text-blue-400 uppercase tracking-[0.3em]">
-                    PORTFOLIO ANALYTICS • BI DASHBOARD
+            {/* Section Divider */}
+            <div className="flex items-center gap-3">
+                <div className="flex-1 h-px bg-gray-300 dark:bg-gray-700" />
+                <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Portfolio Analytics
                 </h2>
-                <div className="flex-1 h-[1px] bg-gradient-to-r from-transparent via-blue-200 dark:via-blue-900 to-transparent" />
+                <div className="flex-1 h-px bg-gray-300 dark:bg-gray-700" />
             </div>
 
-            <AnimatePresence mode="wait">
-                <motion.div
-                    key={activeDashboard + categoryFilter}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="space-y-8 w-full"
-                >
-                    {activeDashboard === 'overview' && (
-                        <div className="flex flex-col lg:flex-row gap-8 items-stretch w-full">
-                            <div className="w-full lg:w-1/3 flex flex-col gap-8">
-                                <ChartContainer
-                                    title="📊 Overall Achievement Gauge"
-                                    controls={<ViewPivot active={achieveView} onChange={setAchieveView} />}
-                                >
-                                    <div className="h-[250px] relative">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <PieChart>
-                                                <Pie data={gaugeData.chart} innerRadius={75} outerRadius={95} paddingAngle={5} dataKey="value" stroke="none">
-                                                    {gaugeData.chart.map((e, i) => <Cell key={i} fill={e.color} />)}
-                                                </Pie>
-                                                <Tooltip
-                                                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
-                                                    formatter={(v: any) => `${v.toLocaleString()} MW`}
-                                                />
-                                            </PieChart>
-                                        </ResponsiveContainer>
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                            <span className="text-4xl font-black text-gray-800 dark:text-white">{gaugeData.achievement.toFixed(1)}%</span>
-                                            <span className="text-xs font-bold text-gray-400 uppercase">Achievement</span>
-                                        </div>
-                                    </div>
-                                </ChartContainer>
-
-                                <ChartContainer
-                                    title={techMixProject !== 'All Projects' ? `⚡ ${techMixProject} Mix` : "⚡ Technology Mix"}
-                                    controls={
-                                        <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-                                            <CardSelect label="SITE" options={geographyOptions} value={techMixGeography} onChange={setTechMixGeography} />
-                                            <CardSelect label="PROJECT" options={projectOptions} value={techMixProject} onChange={setTechMixProject} />
-                                            <div className="col-span-2">
-                                                <CardSelect label="STATUS" options={['All Projects', 'Completed', 'Upcoming']} value={techMixStatus} onChange={setTechMixStatus} />
-                                            </div>
-                                        </div>
-                                    }
-                                >
-                                    <div className="h-[250px] relative">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <PieChart>
-                                                <Pie
-                                                    data={techSplitData.data}
-                                                    innerRadius={70}
-                                                    outerRadius={95}
-                                                    dataKey="value"
-                                                    stroke="none"
-                                                    animationBegin={0}
-                                                    animationDuration={800}
-                                                    onMouseEnter={(_, index) => setTechMixHovered(techSplitData.data[index])}
-                                                    onMouseLeave={() => setTechMixHovered(null)}
-                                                >
-                                                    {techSplitData.data.map((e, i) => (
-                                                        <Cell
-                                                            key={i}
-                                                            fill={e.color}
-                                                            style={{
-                                                                filter: techMixHovered && techMixHovered.name !== e.name ? 'opacity(0.3)' : 'none',
-                                                                transition: 'all 0.3s'
-                                                            }}
-                                                        />
-                                                    ))}
-                                                </Pie>
-                                                <Tooltip
-                                                    content={() => null} // Hidden because center text shows it
-                                                />
-                                            </PieChart>
-                                        </ResponsiveContainer>
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                            <motion.span
-                                                key={techMixHovered ? techMixHovered.value : 'total'}
-                                                initial={{ scale: 0.9, opacity: 0 }}
-                                                animate={{ scale: 1, opacity: 1 }}
-                                                className="text-3xl font-black text-gray-800 dark:text-white leading-none"
-                                            >
-                                                {(techMixHovered ? techMixHovered.value : techSplitData.breakdown.total).toLocaleString()}
-                                            </motion.span>
-                                            <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest mt-1">
-                                                {techMixHovered ? `${techMixHovered.name} CAPACITY` : "Target Portfolio"}
-                                            </span>
-                                            <span className="text-[8px] font-bold text-blue-500/60 uppercase">Planned MW</span>
-                                        </div>
-                                    </div>
-                                    {/* Technology breakdown with values */}
-                                    <div className="flex justify-center gap-8 mt-4">
-                                        {techSplitData.data.map(d => {
-                                            const perc = techSplitData.breakdown.total > 0 ? (d.value / techSplitData.breakdown.total) * 100 : 0;
-                                            return (
-                                                <div
-                                                    key={d.name}
-                                                    className={`flex flex-col items-center transition-all duration-300 ${techMixHovered && techMixHovered.name !== d.name ? 'opacity-30' : 'opacity-100'}`}
-                                                >
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
-                                                        <span className="text-[10px] font-black text-gray-500 uppercase">{d.name}</span>
-                                                    </div>
-                                                    <span className="text-sm font-black text-gray-900 dark:text-white">{d.value.toLocaleString()} MW</span>
-                                                    <span className="text-[10px] font-bold text-blue-500">{perc.toFixed(1)}%</span>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                    <div className="mt-6 pt-4 border-t border-gray-100 dark:border-gray-800">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em]">Geographic Deployment</p>
-                                            <span className="text-[8px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full uppercase">Regional View</span>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {techSplitData.breakdown.khavda > 0 && (
-                                                <div className="bg-blue-50/50 dark:bg-blue-900/10 p-2 rounded-xl border border-blue-100/50">
-                                                    <p className="text-[8px] font-black text-blue-400 uppercase">Khavda</p>
-                                                    <p className="text-xs font-black text-blue-700">{techSplitData.breakdown.khavda.toLocaleString()} MW</p>
-                                                </div>
-                                            )}
-                                            {techSplitData.breakdown.rajasthan > 0 && (
-                                                <div className="bg-amber-50/50 dark:bg-amber-900/10 p-2 rounded-xl border border-amber-100/50">
-                                                    <p className="text-[8px] font-black text-amber-400 uppercase">Rajasthan</p>
-                                                    <p className="text-xs font-black text-amber-700">{techSplitData.breakdown.rajasthan.toLocaleString()} MW</p>
-                                                </div>
-                                            )}
-                                            {techSplitData.breakdown.others > 0 && (
-                                                <div className="bg-gray-50/50 dark:bg-gray-800 p-2 rounded-xl border border-gray-100 col-span-2">
-                                                    <p className="text-[8px] font-black text-gray-400 uppercase">General Portfolio</p>
-                                                    <p className="text-xs font-black text-gray-700">{techSplitData.breakdown.others.toLocaleString()} MW</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </ChartContainer>
-
-                            </div>
-
-                            <div className="w-full lg:w-2/3 flex flex-col min-w-0">
-                                <ChartContainer
-                                    title={mainTimelineProject !== 'All Projects' ? `📈 ${mainTimelineProject} Performance` : (timelineView === 'monthly' ? "📅 Monthly Timeline" : timelineView === 'quarterly' ? "📊 Quarterly Performance" : timelineView === 'half-yearly' ? "📅 Half-Yearly View" : "📈 Annual Summary")}
-                                    controls={
-                                        <div className="flex flex-wrap items-end gap-3">
-                                            <CardSelect label="SITE" options={geographyOptions} value={timelineGeography} onChange={setTimelineGeography} />
-                                            <CardSelect label="MODEL" options={businessModelOptions} value={timelineBusinessModel} onChange={setTimelineBusinessModel} />
-                                            <CardSelect label="PROJECT" options={projectOptions} value={mainTimelineProject} onChange={setMainTimelineProject} />
-                                            <CardSelect label="SPV" options={spvOptions} value={mainTimelineSPV} onChange={setMainTimelineSPV} />
-                                            <ViewPivot active={timelineView} onChange={setTimelineView} />
-                                        </div>
-                                    }
-                                >
-                                    {/* Active Filters Context Label */}
-                                    <div className="mb-4 flex flex-wrap gap-2 text-[9px]">
-                                        <span className="bg-indigo-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
-                                            FY {selectedFY}
-                                        </span>
-                                        <span className="bg-blue-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
-                                            {categoryFilter === 'all' ? 'Solar + Wind' : categoryFilter}
-                                        </span>
-                                        <span className="bg-purple-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
-                                            {timelineBusinessModel === 'All Models' ? 'All Models' : timelineBusinessModel}
-                                        </span>
-                                        <span className="bg-emerald-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
-                                            {timelineGeography === 'All Sites' ? 'All Sites' : timelineGeography}
-                                        </span>
-                                    </div>
-
-                                    <ResponsiveContainer width="100%" height={500}>
-                                        <BarChart data={timelineView === 'monthly' ? monthlyData : timelineView === 'half-yearly' ? halfYearlyData : quarterlyData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                                            {GRADIENTS}
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                                            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                                            <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                                            <Tooltip
-                                                cursor={{ fill: '#f1f5f9' }}
-                                                content={({ active, payload, label }) => {
-                                                    if (active && payload && payload.length) {
-                                                        return (
-                                                            <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 min-w-[220px]">
-                                                                <p className="font-black text-lg mb-2">{label}</p>
-                                                                {payload.map((p: any) => (
-                                                                    <div key={p.name} className="flex justify-between items-center py-1">
-                                                                        <span className="text-gray-500 text-sm font-bold flex items-center gap-1">
-                                                                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }}></span>
-                                                                            {p.name}:
-                                                                        </span>
-                                                                        <span className="font-black text-gray-900 dark:text-white ml-4">{p.value.toLocaleString()} MW</span>
-                                                                    </div>
-                                                                ))}
-                                                                <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 text-[9px] text-gray-400 font-bold uppercase">
-                                                                    {timelineGeography} | {timelineBusinessModel} | FY {selectedFY}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    }
-                                                    return null;
-                                                }}
-                                            />
-                                            <Legend iconType="rect" verticalAlign="top" align="right" />
-                                            <Bar dataKey="PPA Plan" name="📋 PPA Plan" fill="url(#gradientPlan)" radius={[6, 6, 0, 0]} barSize={24} />
-                                            <Bar dataKey="Actual Commissioning" name="✅ Actual Commissioning" fill="url(#gradientActual)" radius={[6, 6, 0, 0]} barSize={24} />
-                                            <Bar dataKey="Rephase Strategy" name="🔄 Rephase Strategy" fill="url(#gradientRephase)" radius={[6, 6, 0, 0]} barSize={24} />
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                </ChartContainer>
-                            </div>
-
-                        </div>
-                    )}
-
-                    {activeDashboard === 'solar' && (
-                        <div className="bg-gradient-to-br from-orange-50/50 via-white to-white dark:from-orange-950/20 dark:via-gray-900 dark:to-gray-900 rounded-[3rem] p-8 border border-orange-100/50 dark:border-gray-800 shadow-xl space-y-8">
-                            <div className="flex flex-wrap justify-between items-center gap-4">
-                                <h3 className="text-2xl font-black text-gray-800 dark:text-white flex items-center gap-4">
-                                    <span className="p-3 bg-orange-500 rounded-2xl text-white shadow-lg shadow-orange-500/30 text-2xl">☀️</span>
-                                    Solar Portfolio Analysis
-                                </h3>
-                                <div className="flex flex-wrap gap-3">
-                                    <CardSelect label="SITE" options={geographyOptions} value={solarGeography} onChange={setSolarGeography} />
-                                    <CardSelect label="MODEL" options={businessModelOptions} value={solarBusinessModel} onChange={setSolarBusinessModel} />
-                                    <MultiSlicer label="Projects" options={SECTION_OPTIONS.filter(s => s.label.includes('Solar'))} selected={selectedSections} onChange={setSelectedSections} />
-                                </div>
-                            </div>
-
-                            {/* Solar Summary with Breakdown */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-white/50 dark:bg-gray-900/50 rounded-2xl p-4 border border-orange-100 dark:border-gray-800">
-                                <div className="text-center">
-                                    <p className="text-[9px] font-black text-orange-500 uppercase tracking-widest">Total Plan</p>
-                                    <p className="text-2xl font-black text-gray-900 dark:text-white">{solarData.totalPlan.toLocaleString()} <span className="text-sm text-gray-400">MW</span></p>
-                                </div>
-                                <div className="text-center">
-                                    <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Actual</p>
-                                    <p className="text-2xl font-black text-gray-900 dark:text-white">{solarData.totalActual.toLocaleString()} <span className="text-sm text-gray-400">MW</span></p>
-                                </div>
-                                <div className="text-center">
-                                    <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest">Achievement</p>
-                                    <p className="text-2xl font-black text-gray-900 dark:text-white">{solarData.totalPlan > 0 ? ((solarData.totalActual / solarData.totalPlan) * 100).toFixed(1) : 0}%</p>
-                                </div>
-                                <div className="text-center">
-                                    <p className="text-[9px] font-black text-purple-500 uppercase tracking-widest">Projects</p>
-                                    <p className="text-2xl font-black text-gray-900 dark:text-white">{solarData.projectCount}</p>
-                                </div>
-                            </div>
-
-                            {/* Active Filters Context */}
-                            <div className="flex flex-wrap gap-2 text-[9px]">
-                                <span className="bg-indigo-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">FY {selectedFY}</span>
-                                <span className="bg-orange-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">Solar Only</span>
-                                <span className="bg-purple-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
-                                    {solarBusinessModel === 'All Models' ? 'All Models' : solarBusinessModel}
-                                </span>
-                                <span className="bg-emerald-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
-                                    {solarGeography === 'All Sites' ? 'All Sites' : solarGeography}
-                                </span>
-                            </div>
-
-
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                <ChartContainer
-                                    title="Solar - Quarterly Comparison"
-                                    controls={<CardSelect label="PROJECT PHASE" options={['All Phases', 'Phase 1', 'Phase 2']} value={solarPhase} onChange={setSolarPhase} />}
-                                >
-                                    <ResponsiveContainer width="100%" height={250}>
-                                        <BarChart data={solarData.quarterly}>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                            <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                                            <YAxis axisLine={false} tickLine={false} />
-                                            <Tooltip formatter={(v: any) => `${v.toLocaleString()} MW`} />
-                                            <Bar dataKey="PPA Plan" fill="#F97316" radius={[6, 6, 0, 0]} barSize={32} />
-                                            <Bar dataKey="Actual Commissioning" fill="#10B981" radius={[6, 6, 0, 0]} barSize={32} />
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                </ChartContainer>
-                                <ChartContainer
-                                    title="Solar - Monthly Trend"
-                                    controls={<CardSelect label="DATA VIEW" options={['Target View', 'Execution View']} value={solarViewMode} onChange={setSolarViewMode} />}
-                                >
-                                    <ResponsiveContainer width="100%" height={250}>
-                                        <AreaChart data={solarData.monthly}>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                            <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                                            <YAxis axisLine={false} tickLine={false} />
-                                            <Tooltip formatter={(v: any) => `${v.toLocaleString()} MW`} />
-                                            <Area type="monotone" dataKey="PPA Plan" stroke="#F97316" fill="#FED7AA" strokeWidth={3} />
-                                            <Area type="monotone" dataKey="Actual Commissioning" stroke="#10B981" fill="#A7F3D0" strokeWidth={3} />
-                                        </AreaChart>
-                                    </ResponsiveContainer>
-                                </ChartContainer>
-                            </div>
-
-
-                            <div className="bg-white dark:bg-gray-950 border border-gray-100 dark:border-gray-800 rounded-[2.5rem] p-8 shadow-sm">
-                                <h4 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-6">Solar Project Portfolio Breakdown</h4>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left">
-                                        <thead>
-                                            <tr className="border-b border-gray-100 dark:border-gray-800 text-[10px] font-black uppercase text-gray-400">
-                                                <th className="pb-4">Project Name</th>
-                                                <th className="pb-4">Target Capacity</th>
-                                                <th className="pb-4">Actual Achieved</th>
-                                                <th className="pb-4">Status</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-50 dark:divide-gray-900">
-                                            {allProjects.filter(p => (selectedSections.includes('all') || selectedSections.includes(p.category)) && p.category?.toLowerCase().includes('solar') && p.planActual === 'Plan').map(p => {
-                                                const actual = allProjects.find(ap => ap.projectName === p.projectName && ap.planActual === 'Actual');
-                                                return (
-                                                    <tr key={p.projectName} className="group">
-                                                        <td className="py-4 text-sm font-bold text-gray-800 dark:text-gray-200 group-hover:text-blue-600 transition-colors uppercase">{p.projectName}</td>
-                                                        <td className="py-4 text-sm font-black text-gray-900 dark:text-white">{p.capacity} MW</td>
-                                                        <td className="py-4 text-sm font-black text-gray-900 dark:text-white">{actual?.totalCapacity || 0} MW</td>
-                                                        <td className="py-4">
-                                                            <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${(actual?.totalCapacity || 0) >= p.capacity ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
-                                                                {(actual?.totalCapacity || 0) >= p.capacity ? 'Completed' : 'On-Going'}
-                                                            </span>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeDashboard === 'wind' && (
-                        <div className="bg-gradient-to-br from-cyan-50/50 via-white to-white dark:from-cyan-950/20 dark:via-gray-900 dark:to-gray-900 rounded-[3rem] p-8 border border-cyan-100/50 dark:border-gray-800 shadow-xl space-y-8">
-                            <div className="flex flex-wrap justify-between items-center gap-4">
-                                <h3 className="text-2xl font-black text-gray-800 dark:text-white flex items-center gap-4">
-                                    <span className="p-3 bg-cyan-500 rounded-2xl text-white shadow-lg shadow-cyan-500/30 text-2xl">🌬️</span>
-                                    Wind Portfolio Analysis
-                                </h3>
-                                <div className="flex flex-wrap gap-3">
-                                    <CardSelect label="SITE" options={geographyOptions} value={windGeography} onChange={setWindGeography} />
-                                    <CardSelect label="MODEL" options={businessModelOptions} value={windBusinessModel} onChange={setWindBusinessModel} />
-                                    <MultiSlicer label="Projects" options={SECTION_OPTIONS.filter(s => s.label.includes('Wind'))} selected={selectedSections} onChange={setSelectedSections} />
-                                </div>
-                            </div>
-
-                            {/* Wind Summary with Breakdown */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-white/50 dark:bg-gray-900/50 rounded-2xl p-4 border border-cyan-100 dark:border-gray-800">
-                                <div className="text-center">
-                                    <p className="text-[9px] font-black text-cyan-500 uppercase tracking-widest">Total Plan</p>
-                                    <p className="text-2xl font-black text-gray-900 dark:text-white">{windData.totalPlan.toLocaleString()} <span className="text-sm text-gray-400">MW</span></p>
-                                </div>
-                                <div className="text-center">
-                                    <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Actual</p>
-                                    <p className="text-2xl font-black text-gray-900 dark:text-white">{windData.totalActual.toLocaleString()} <span className="text-sm text-gray-400">MW</span></p>
-                                </div>
-                                <div className="text-center">
-                                    <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest">Achievement</p>
-                                    <p className="text-2xl font-black text-gray-900 dark:text-white">{windData.totalPlan > 0 ? ((windData.totalActual / windData.totalPlan) * 100).toFixed(1) : 0}%</p>
-                                </div>
-                                <div className="text-center">
-                                    <p className="text-[9px] font-black text-purple-500 uppercase tracking-widest">Projects</p>
-                                    <p className="text-2xl font-black text-gray-900 dark:text-white">{windData.projectCount}</p>
-                                </div>
-                            </div>
-
-                            {/* Active Filters Context */}
-                            <div className="flex flex-wrap gap-2 text-[9px]">
-                                <span className="bg-indigo-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">FY {selectedFY}</span>
-                                <span className="bg-cyan-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">Wind Only</span>
-                                <span className="bg-purple-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
-                                    {windBusinessModel === 'All Models' ? 'All Models' : windBusinessModel}
-                                </span>
-                                <span className="bg-emerald-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
-                                    {windGeography === 'All Sites' ? 'All Sites' : windGeography}
-                                </span>
-                            </div>
-
-
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                <ChartContainer
-                                    title="Wind - Quarterly Comparison"
-                                    controls={<CardSelect label="SPV FILTER" options={['All SPVs', 'Selected SPVs']} value={windSPV} onChange={setWindSPV} />}
-                                >
-                                    <ResponsiveContainer width="100%" height={250}>
-                                        <BarChart data={windData.quarterly}>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                            <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                                            <YAxis axisLine={false} tickLine={false} />
-                                            <Tooltip formatter={(v: any) => `${v.toLocaleString()} MW`} />
-                                            <Bar dataKey="PPA Plan" fill="#06B6D4" radius={[6, 6, 0, 0]} barSize={32} />
-                                            <Bar dataKey="Actual Commissioning" fill="#10B981" radius={[6, 6, 0, 0]} barSize={32} />
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                </ChartContainer>
-                                <ChartContainer
-                                    title="Wind - Monthly Trend"
-                                    controls={<CardSelect label="MARKET TYPE" options={['Growth View', 'Standard View']} value={windMarket} onChange={setWindMarket} />}
-                                >
-                                    <ResponsiveContainer width="100%" height={250}>
-                                        <AreaChart data={windData.monthly}>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                            <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                                            <YAxis axisLine={false} tickLine={false} />
-                                            <Tooltip formatter={(v: any) => `${v.toLocaleString()} MW`} />
-                                            <Area type="monotone" dataKey="PPA Plan" stroke="#06B6D4" fill="#A5F3FC" strokeWidth={3} />
-                                            <Area type="monotone" dataKey="Actual Commissioning" stroke="#10B981" fill="#A7F3D0" strokeWidth={3} />
-                                        </AreaChart>
-                                    </ResponsiveContainer>
-                                </ChartContainer>
-
-                            </div>
-
-                            <div className="bg-white dark:bg-gray-950 border border-gray-100 dark:border-gray-800 rounded-[2.5rem] p-8 shadow-sm">
-                                <h4 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-6">Wind Project Portfolio Breakdown</h4>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left">
-                                        <thead>
-                                            <tr className="border-b border-gray-100 dark:border-gray-800 text-[10px] font-black uppercase text-gray-400">
-                                                <th className="pb-4">Project Name</th>
-                                                <th className="pb-4">Target Capacity</th>
-                                                <th className="pb-4">Actual Achieved</th>
-                                                <th className="pb-4">Status</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-50 dark:divide-gray-900">
-                                            {allProjects.filter(p => (selectedSections.includes('all') || selectedSections.includes(p.category)) && p.category?.toLowerCase().includes('wind') && p.planActual === 'Plan').map(p => {
-                                                const actual = allProjects.find(ap => ap.projectName === p.projectName && ap.planActual === 'Actual');
-                                                return (
-                                                    <tr key={p.projectName} className="group">
-                                                        <td className="py-4 text-sm font-bold text-gray-800 dark:text-gray-200 group-hover:text-blue-600 transition-colors uppercase">{p.projectName}</td>
-                                                        <td className="py-4 text-sm font-black text-gray-900 dark:text-white">{p.capacity} MW</td>
-                                                        <td className="py-4 text-sm font-black text-gray-900 dark:text-white">{actual?.totalCapacity || 0} MW</td>
-                                                        <td className="py-4">
-                                                            <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${(actual?.totalCapacity || 0) >= p.capacity ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
-                                                                {(actual?.totalCapacity || 0) >= p.capacity ? 'Completed' : 'On-Going'}
-                                                            </span>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeDashboard === 'models' && (
-                        <div className="space-y-8">
-                            {/* Models Dashboard Header */}
-                            <div className="bg-gradient-to-br from-purple-50/50 via-white to-pink-50/30 dark:from-purple-950/20 dark:via-gray-900 dark:to-gray-900 rounded-[3rem] p-6 border border-purple-100/50 dark:border-gray-800">
-                                <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
-                                    <h3 className="text-2xl font-black text-gray-800 dark:text-white flex items-center gap-4">
-                                        <span className="p-3 bg-purple-500 rounded-2xl text-white shadow-lg shadow-purple-500/30 text-2xl">💼</span>
-                                        Business Model Analysis
-                                    </h3>
-                                    <div className="flex flex-wrap gap-3">
-                                        <GlobalSlicer label="Technology" options={['All', 'Solar', 'Wind']} value={modelsTechnology} onChange={setModelsTechnology} />
-                                        <CardSelect label="SITE" options={geographyOptions} value={modelsGeography} onChange={setModelsGeography} />
-                                    </div>
-                                </div>
-                                {/* Active Filters Context */}
-                                <div className="flex flex-wrap gap-2 text-[9px]">
-                                    <span className="bg-indigo-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">FY {selectedFY}</span>
-                                    <span className="bg-blue-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
-                                        {modelsTechnology === 'All' ? 'Solar + Wind' : modelsTechnology}
-                                    </span>
-                                    <span className="bg-emerald-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
-                                        {modelsGeography === 'All Sites' ? 'All Sites' : modelsGeography}
-                                    </span>
-                                </div>
-
-                            </div>
-
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                                <ChartContainer
-                                    title="💼 Business Model Distribution"
-                                    controls={<CardSelect label="METRIC" options={['Capacity Share', 'Project Count']} value={modelMetric} onChange={setModelMetric} />}
-                                >
-
-                                    <ResponsiveContainer width="100%" height={300}>
+            <div className="space-y-4 w-full">
+                {activeDashboard === 'overview' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 w-full">
+                        {/* Left Column - Gauge and Tech Mix */}
+                        <div className="space-y-4">
+                            <ChartContainer
+                                title="Overall Achievement"
+                                controls={<ViewPivot active={achieveView} onChange={setAchieveView} label="" />}
+                            >
+                                <div className="h-[180px] relative">
+                                    <ResponsiveContainer width="100%" height="100%">
                                         <PieChart>
-                                            <Pie data={modelSplitData} innerRadius={80} outerRadius={110} dataKey="value" stroke="none">
-                                                {modelSplitData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                                            <Pie data={gaugeData.chart} innerRadius={60} outerRadius={80} paddingAngle={2} dataKey="value" stroke="none">
+                                                {gaugeData.chart.map((e, i) => <Cell key={i} fill={e.color} style={{ filter: 'url(#shadow)' }} />)}
                                             </Pie>
-                                            <Tooltip formatter={(v: any) => `${v.toLocaleString()} MW`} />
-                                            <Legend verticalAlign="bottom" iconType="circle" />
+                                            <Tooltip
+                                                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
+                                                formatter={(v: any) => `${v.toLocaleString()} MW`}
+                                            />
                                         </PieChart>
                                     </ResponsiveContainer>
-                                </ChartContainer>
-                                <div className="lg:col-span-2">
-                                    <ChartContainer
-                                        title="📊 Model vs Target Breakdown"
-                                        controls={<CardSelect label="DRILL DOWN" options={['Project Drill-down', 'Phase Breakdown']} value={modelDrill} onChange={setModelDrill} />}
-                                    >
-                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 h-[300px]">
-                                            {modelSplitData.map(m => (
-                                                <div key={m.name} className="bg-gray-50 dark:bg-gray-800/50 p-6 rounded-[2rem] flex flex-col justify-center items-center shadow-inner hover:shadow-md transition-all border border-transparent hover:border-gray-200 dark:hover:border-gray-700 group">
-                                                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{m.name}</span>
-                                                    <span className="text-3xl font-black group-hover:scale-110 transition-transform" style={{ color: m.color }}>{m.value.toLocaleString()} MW</span>
-                                                    <div className="mt-4 w-full h-1.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
-                                                        <motion.div initial={{ width: 0 }} animate={{ width: `${(m.value / overallKpi.plan) * 100}%` }} className="h-full" style={{ backgroundColor: m.color }} />
-                                                    </div>
-                                                    <span className="mt-2 text-[10px] font-bold text-gray-500 uppercase tracking-tighter">{((m.value / (overallKpi.plan || 1)) * 100).toFixed(1)}% of total</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </ChartContainer>
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                        <span className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white">{gaugeData.achievement.toFixed(1)}%</span>
+                                        <span className="text-[10px] font-semibold text-gray-400 uppercase">Achievement</span>
+                                    </div>
                                 </div>
+                            </ChartContainer>
+
+                            <ChartContainer
+                                title="Technology Mix"
+                                controls={
+                                    <CardSelect label="" options={geographyOptions} value={techMixGeography} onChange={setTechMixGeography} />
+                                }
+                            >
+                                <div className="h-[160px] relative">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <PieChart>
+                                            <Pie
+                                                data={techSplitData.data}
+                                                innerRadius={50}
+                                                outerRadius={70}
+                                                dataKey="value"
+                                                stroke="none"
+                                                animationBegin={0}
+                                                animationDuration={800}
+                                                onMouseEnter={(_, index) => setTechMixHovered(techSplitData.data[index])}
+                                                onMouseLeave={() => setTechMixHovered(null)}
+                                            >
+                                                {techSplitData.data.map((e, i) => (
+                                                    <Cell
+                                                        key={i}
+                                                        fill={e.color}
+                                                        style={{
+                                                            filter: techMixHovered && techMixHovered.name !== e.name ? 'opacity(0.3)' : 'url(#shadow)',
+                                                            transition: 'all 0.3s'
+                                                        }}
+                                                    />
+                                                ))}
+                                            </Pie>
+                                            <Tooltip content={() => null} />
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                        <span className="text-xl font-bold text-gray-800 dark:text-white leading-none">
+                                            {(techMixHovered ? techMixHovered.value : techSplitData.breakdown.total).toLocaleString()}
+                                        </span>
+                                        <span className="text-[8px] font-semibold text-gray-400 uppercase mt-0.5">
+                                            {techMixHovered ? techMixHovered.name : "Total MW"}
+                                        </span>
+                                    </div>
+                                </div>
+                                {/* Technology breakdown */}
+                                <div className="flex justify-center gap-4 mt-2">
+                                    {techSplitData.data.map(d => {
+                                        const perc = techSplitData.breakdown.total > 0 ? (d.value / techSplitData.breakdown.total) * 100 : 0;
+                                        return (
+                                            <div
+                                                key={d.name}
+                                                className={`flex flex-col items-center transition-all ${techMixHovered && techMixHovered.name !== d.name ? 'opacity-30' : 'opacity-100'}`}
+                                            >
+                                                <div className="flex items-center gap-1 mb-0.5">
+                                                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                                                    <span className="text-[9px] font-semibold text-gray-500 uppercase">{d.name}</span>
+                                                </div>
+                                                <span className="text-xs font-bold text-gray-900 dark:text-white">{d.value.toLocaleString()} MW</span>
+                                                <span className="text-[9px] font-medium text-[#0B74B0]">{perc.toFixed(1)}%</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </ChartContainer>
+                        </div>
+
+                        {/* Right Column - Quarterly Performance */}
+                        <div className="lg:col-span-2">
+                            <ChartContainer
+                                className="h-full"
+                                title={timelineView === 'monthly' ? "Monthly Timeline" : timelineView === 'quarterly' ? "Quarterly Performance" : timelineView === 'half-yearly' ? "Half-Yearly View" : "Annual Summary"}
+                                controls={
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <CardSelect label="" options={geographyOptions} value={timelineGeography} onChange={setTimelineGeography} />
+                                        <CardSelect label="" options={businessModelOptions} value={timelineBusinessModel} onChange={setTimelineBusinessModel} />
+                                        <CardSelect label="" options={projectOptions} value={mainTimelineProject} onChange={setMainTimelineProject} />
+                                        <CardSelect label="" options={spvOptions} value={mainTimelineSPV} onChange={setMainTimelineSPV} />
+                                        <div className="hidden sm:block w-px h-6 bg-gray-300 dark:bg-gray-600" />
+                                        <ViewPivot active={timelineView} onChange={setTimelineView} label="" />
+                                    </div>
+                                }
+                            >
+                                {/* Filter tags */}
+                                <div className="mb-3 flex flex-wrap gap-1 text-[9px]">
+                                    <span className="bg-gray-100 dark:bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded font-medium">FY {selectedFY}</span>
+                                    <span className="bg-gray-100 dark:bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded font-medium">{categoryFilter === 'all' ? 'Solar + Wind' : categoryFilter}</span>
+                                    <span className="bg-gray-100 dark:bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded font-medium">{timelineBusinessModel}</span>
+                                    <span className="bg-gray-100 dark:bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded font-medium">{timelineGeography}</span>
+                                </div>
+
+                                <ResponsiveContainer width="100%" height={350}>
+                                    <BarChart data={timelineView === 'monthly' ? monthlyData : timelineView === 'half-yearly' ? halfYearlyData : quarterlyData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                                        {GRADIENTS}
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                                        <Tooltip
+                                            cursor={{ fill: '#f1f5f9' }}
+                                            content={({ active, payload, label }) => {
+                                                if (active && payload && payload.length) {
+                                                    return (
+                                                        <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 min-w-[220px]">
+                                                            <p className="font-black text-lg mb-2">{label}</p>
+                                                            {payload.map((p: any) => (
+                                                                <div key={p.name} className="flex justify-between items-center py-1">
+                                                                    <span className="text-gray-500 text-sm font-bold flex items-center gap-1">
+                                                                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }}></span>
+                                                                        {p.name}:
+                                                                    </span>
+                                                                    <span className="font-black text-gray-900 dark:text-white ml-4">{p.value.toLocaleString()} MW</span>
+                                                                </div>
+                                                            ))}
+                                                            <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 text-[9px] text-gray-400 font-bold uppercase">
+                                                                {timelineGeography} | {timelineBusinessModel} | FY {selectedFY}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                }
+                                                return null;
+                                            }}
+                                        />
+                                        <Legend iconType="rect" verticalAlign="top" align="right" />
+                                        <Bar dataKey="PPA Plan" name="PPA Plan" fill="url(#gradientPlan)" radius={[4, 4, 0, 0]} barSize={32} />
+                                        <Bar dataKey="Actual Commissioning" name="Actual Commissioning" fill="url(#gradientActual)" radius={[4, 4, 0, 0]} barSize={32} />
+                                        <Bar dataKey="Rephase Strategy" name="Rephase Strategy" fill="url(#gradientRephase)" radius={[4, 4, 0, 0]} barSize={32} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </ChartContainer>
+                        </div>
+
+                    </div>
+                )}
+
+                {activeDashboard === 'solar' && (
+                    <div className="bg-white dark:bg-gray-900 rounded-lg p-6 border border-gray-200 dark:border-gray-700 shadow-sm space-y-6">
+                        <div className="flex flex-wrap justify-between items-center gap-4">
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                                <span className="w-1 h-5 bg-orange-500 rounded-sm" />
+                                Solar Portfolio Analysis
+                            </h3>
+                            <div className="flex flex-wrap gap-2">
+                                <CardSelect label="Site" options={geographyOptions} value={solarGeography} onChange={setSolarGeography} />
+                                <CardSelect label="Model" options={businessModelOptions} value={solarBusinessModel} onChange={setSolarBusinessModel} />
+                                <MultiSlicer label="Projects" options={SECTION_OPTIONS.filter(s => s.label.includes('Solar'))} selected={selectedSections} onChange={setSelectedSections} />
                             </div>
                         </div>
-                    )}
 
-                    {activeDashboard === 'deviation' && (
-                        <div className="space-y-8">
-                            {/* Deviation Dashboard Header with Filters */}
-                            <div className="bg-gradient-to-br from-rose-50/50 via-white to-amber-50/30 dark:from-rose-950/20 dark:via-gray-900 dark:to-gray-900 rounded-[3rem] p-6 border border-rose-100/50 dark:border-gray-800">
-                                <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
-                                    <h3 className="text-2xl font-black text-gray-800 dark:text-white flex items-center gap-4">
-                                        <span className="p-3 bg-rose-500 rounded-2xl text-white shadow-lg shadow-rose-500/30 text-2xl">⚠️</span>
-                                        Deviation Analysis Dashboard
-                                    </h3>
-                                    <div className="flex flex-wrap gap-3">
-                                        <GlobalSlicer label="Technology" options={['All', 'Solar', 'Wind']} value={categoryFilter === 'all' ? 'All' : categoryFilter === 'solar' ? 'Solar' : 'Wind'} onChange={(v: string) => setCategoryFilter(v.toLowerCase() as any)} />
-                                        <CardSelect label="MODEL" options={businessModelOptions} value={timelineBusinessModel} onChange={setTimelineBusinessModel} />
-                                        <CardSelect label="SITE" options={geographyOptions} value={timelineGeography} onChange={setTimelineGeography} />
-                                    </div>
+                        {/* Solar Summary */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
+                            <div className="text-center">
+                                <p className="text-xs font-medium text-gray-500 uppercase">Total Plan</p>
+                                <p className="text-xl font-bold text-gray-900 dark:text-white">{solarData.totalPlan.toLocaleString()} <span className="text-sm text-gray-400">MW</span></p>
+                            </div>
+                            <div className="text-center">
+                                <p className="text-xs font-medium text-gray-500 uppercase">Actual</p>
+                                <p className="text-xl font-bold text-gray-900 dark:text-white">{solarData.totalActual.toLocaleString()} <span className="text-sm text-gray-400">MW</span></p>
+                            </div>
+                            <div className="text-center">
+                                <p className="text-xs font-medium text-gray-500 uppercase">Achievement</p>
+                                <p className="text-xl font-bold text-gray-900 dark:text-white">{solarData.totalPlan > 0 ? ((solarData.totalActual / solarData.totalPlan) * 100).toFixed(1) : 0}%</p>
+                            </div>
+                            <div className="text-center">
+                                <p className="text-xs font-medium text-gray-500 uppercase">Projects</p>
+                                <p className="text-xl font-bold text-gray-900 dark:text-white">{solarData.projectCount}</p>
+                            </div>
+                        </div>
+
+                        {/* Filter Tags */}
+                        <div className="flex flex-wrap gap-2 text-xs">
+                            <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">FY {selectedFY}</span>
+                            <span className="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 px-2 py-1 rounded font-medium">Solar</span>
+                            <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">
+                                {solarBusinessModel === 'All Models' ? 'All Models' : solarBusinessModel}
+                            </span>
+                            <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">
+                                {solarGeography === 'All Sites' ? 'All Sites' : solarGeography}
+                            </span>
+                        </div>
+
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <ChartContainer
+                                title="Solar - Quarterly Comparison"
+                                controls={<CardSelect label="PROJECT PHASE" options={['All Phases', 'Phase 1', 'Phase 2']} value={solarPhase} onChange={setSolarPhase} />}
+                            >
+                                <ResponsiveContainer width="100%" height={250}>
+                                    <BarChart data={solarData.quarterly}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                                        <YAxis axisLine={false} tickLine={false} />
+                                        <Tooltip formatter={(v: any) => `${v.toLocaleString()} MW`} />
+                                        <Bar dataKey="PPA Plan" fill="#F97316" radius={[6, 6, 0, 0]} barSize={32} />
+                                        <Bar dataKey="Actual Commissioning" fill="#10B981" radius={[6, 6, 0, 0]} barSize={32} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </ChartContainer>
+                            <ChartContainer
+                                title="Solar - Monthly Trend"
+                                controls={<CardSelect label="DATA VIEW" options={['Target View', 'Execution View']} value={solarViewMode} onChange={setSolarViewMode} />}
+                            >
+                                <ResponsiveContainer width="100%" height={250}>
+                                    <AreaChart data={solarData.monthly}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                                        <YAxis axisLine={false} tickLine={false} />
+                                        <Tooltip formatter={(v: any) => `${v.toLocaleString()} MW`} />
+                                        <Area type="monotone" dataKey="PPA Plan" stroke="#F97316" fill="#FED7AA" strokeWidth={3} />
+                                        <Area type="monotone" dataKey="Actual Commissioning" stroke="#10B981" fill="#A7F3D0" strokeWidth={3} />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </ChartContainer>
+                        </div>
+
+
+                        <div className="bg-white dark:bg-gray-950 border border-gray-100 dark:border-gray-800 rounded-[2.5rem] p-8 shadow-sm">
+                            <h4 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-6">Solar Project Portfolio Breakdown</h4>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left">
+                                    <thead>
+                                        <tr className="border-b border-gray-100 dark:border-gray-800 text-[10px] font-black uppercase text-gray-400">
+                                            <th className="pb-4">Project Name</th>
+                                            <th className="pb-4">Target Capacity</th>
+                                            <th className="pb-4">Actual Achieved</th>
+                                            <th className="pb-4">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-50 dark:divide-gray-900">
+                                        {allProjects.filter(p => (selectedSections.includes('all') || selectedSections.includes(p.category)) && p.category?.toLowerCase().includes('solar') && p.planActual === 'Plan').map(p => {
+                                            const actual = allProjects.find(ap => ap.projectName === p.projectName && ap.planActual === 'Actual');
+                                            return (
+                                                <tr key={p.projectName} className="group">
+                                                    <td className="py-4 text-sm font-bold text-gray-800 dark:text-gray-200 group-hover:text-blue-600 transition-colors uppercase">{p.projectName}</td>
+                                                    <td className="py-4 text-sm font-black text-gray-900 dark:text-white">{p.capacity} MW</td>
+                                                    <td className="py-4 text-sm font-black text-gray-900 dark:text-white">{actual?.totalCapacity || 0} MW</td>
+                                                    <td className="py-4">
+                                                        <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${(actual?.totalCapacity || 0) >= p.capacity ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
+                                                            {(actual?.totalCapacity || 0) >= p.capacity ? 'Completed' : 'On-Going'}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {activeDashboard === 'wind' && (
+                    <div className="bg-white dark:bg-gray-900 rounded-lg p-6 border border-gray-200 dark:border-gray-700 shadow-sm space-y-6">
+                        <div className="flex flex-wrap justify-between items-center gap-4">
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                                <span className="w-1 h-5 bg-cyan-500 rounded-sm" />
+                                Wind Portfolio Analysis
+                            </h3>
+                            <div className="flex flex-wrap gap-2">
+                                <CardSelect label="Site" options={geographyOptions} value={windGeography} onChange={setWindGeography} />
+                                <CardSelect label="Model" options={businessModelOptions} value={windBusinessModel} onChange={setWindBusinessModel} />
+                                <MultiSlicer label="Projects" options={SECTION_OPTIONS.filter(s => s.label.includes('Wind'))} selected={selectedSections} onChange={setSelectedSections} />
+                            </div>
+                        </div>
+
+                        {/* Wind Summary */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
+                            <div className="text-center">
+                                <p className="text-xs font-medium text-gray-500 uppercase">Total Plan</p>
+                                <p className="text-xl font-bold text-gray-900 dark:text-white">{windData.totalPlan.toLocaleString()} <span className="text-sm text-gray-400">MW</span></p>
+                            </div>
+                            <div className="text-center">
+                                <p className="text-xs font-medium text-gray-500 uppercase">Actual</p>
+                                <p className="text-xl font-bold text-gray-900 dark:text-white">{windData.totalActual.toLocaleString()} <span className="text-sm text-gray-400">MW</span></p>
+                            </div>
+                            <div className="text-center">
+                                <p className="text-xs font-medium text-gray-500 uppercase">Achievement</p>
+                                <p className="text-xl font-bold text-gray-900 dark:text-white">{windData.totalPlan > 0 ? ((windData.totalActual / windData.totalPlan) * 100).toFixed(1) : 0}%</p>
+                            </div>
+                            <div className="text-center">
+                                <p className="text-xs font-medium text-gray-500 uppercase">Projects</p>
+                                <p className="text-xl font-bold text-gray-900 dark:text-white">{windData.projectCount}</p>
+                            </div>
+                        </div>
+
+                        {/* Filter Tags */}
+                        <div className="flex flex-wrap gap-2 text-xs">
+                            <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">FY {selectedFY}</span>
+                            <span className="bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 px-2 py-1 rounded font-medium">Wind</span>
+                            <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">
+                                {windBusinessModel === 'All Models' ? 'All Models' : windBusinessModel}
+                            </span>
+                            <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">
+                                {windGeography === 'All Sites' ? 'All Sites' : windGeography}
+                            </span>
+                        </div>
+
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <ChartContainer
+                                title="Wind - Quarterly Comparison"
+                                controls={<CardSelect label="SPV FILTER" options={['All SPVs', 'Selected SPVs']} value={windSPV} onChange={setWindSPV} />}
+                            >
+                                <ResponsiveContainer width="100%" height={250}>
+                                    <BarChart data={windData.quarterly}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                                        <YAxis axisLine={false} tickLine={false} />
+                                        <Tooltip formatter={(v: any) => `${v.toLocaleString()} MW`} />
+                                        <Bar dataKey="PPA Plan" fill="#06B6D4" radius={[6, 6, 0, 0]} barSize={32} />
+                                        <Bar dataKey="Actual Commissioning" fill="#10B981" radius={[6, 6, 0, 0]} barSize={32} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </ChartContainer>
+                            <ChartContainer
+                                title="Wind - Monthly Trend"
+                                controls={<CardSelect label="MARKET TYPE" options={['Growth View', 'Standard View']} value={windMarket} onChange={setWindMarket} />}
+                            >
+                                <ResponsiveContainer width="100%" height={250}>
+                                    <AreaChart data={windData.monthly}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                                        <YAxis axisLine={false} tickLine={false} />
+                                        <Tooltip formatter={(v: any) => `${v.toLocaleString()} MW`} />
+                                        <Area type="monotone" dataKey="PPA Plan" stroke="#06B6D4" fill="#A5F3FC" strokeWidth={3} />
+                                        <Area type="monotone" dataKey="Actual Commissioning" stroke="#10B981" fill="#A7F3D0" strokeWidth={3} />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </ChartContainer>
+
+                        </div>
+
+                        <div className="bg-white dark:bg-gray-950 border border-gray-100 dark:border-gray-800 rounded-[2.5rem] p-8 shadow-sm">
+                            <h4 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-6">Wind Project Portfolio Breakdown</h4>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left">
+                                    <thead>
+                                        <tr className="border-b border-gray-100 dark:border-gray-800 text-[10px] font-black uppercase text-gray-400">
+                                            <th className="pb-4">Project Name</th>
+                                            <th className="pb-4">Target Capacity</th>
+                                            <th className="pb-4">Actual Achieved</th>
+                                            <th className="pb-4">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-50 dark:divide-gray-900">
+                                        {allProjects.filter(p => (selectedSections.includes('all') || selectedSections.includes(p.category)) && p.category?.toLowerCase().includes('wind') && p.planActual === 'Plan').map(p => {
+                                            const actual = allProjects.find(ap => ap.projectName === p.projectName && ap.planActual === 'Actual');
+                                            return (
+                                                <tr key={p.projectName} className="group">
+                                                    <td className="py-4 text-sm font-bold text-gray-800 dark:text-gray-200 group-hover:text-blue-600 transition-colors uppercase">{p.projectName}</td>
+                                                    <td className="py-4 text-sm font-black text-gray-900 dark:text-white">{p.capacity} MW</td>
+                                                    <td className="py-4 text-sm font-black text-gray-900 dark:text-white">{actual?.totalCapacity || 0} MW</td>
+                                                    <td className="py-4">
+                                                        <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${(actual?.totalCapacity || 0) >= p.capacity ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
+                                                            {(actual?.totalCapacity || 0) >= p.capacity ? 'Completed' : 'On-Going'}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {activeDashboard === 'models' && (
+                    <div className="space-y-6">
+                        {/* Models Dashboard Header */}
+                        <div className="bg-white dark:bg-gray-900 rounded-lg p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+                            <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
+                                <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                                    <span className="w-1 h-5 bg-purple-500 rounded-sm" />
+                                    Business Model Analysis
+                                </h3>
+                                <div className="flex flex-wrap gap-2">
+                                    <GlobalSlicer label="Technology" options={['All', 'Solar', 'Wind']} value={modelsTechnology} onChange={setModelsTechnology} />
+                                    <CardSelect label="Site" options={geographyOptions} value={modelsGeography} onChange={setModelsGeography} />
                                 </div>
-
-                                {/* Deviation Summary Stats */}
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                    <div className="bg-white/80 dark:bg-gray-900/50 rounded-2xl p-4 text-center border border-rose-100 dark:border-gray-800">
-                                        <p className="text-[9px] font-black text-rose-500 uppercase tracking-widest">Total Deviation</p>
-                                        <p className={`text-2xl font-black ${(overallKpi.actual - overallKpi.plan) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                            {(overallKpi.actual - overallKpi.plan) >= 0 ? '+' : ''}{(overallKpi.actual - overallKpi.plan).toLocaleString()} <span className="text-sm">MW</span>
-                                        </p>
-                                    </div>
-                                    <div className="bg-white/80 dark:bg-gray-900/50 rounded-2xl p-4 text-center border border-gray-100 dark:border-gray-800">
-                                        <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Periods Behind</p>
-                                        <p className="text-2xl font-black text-rose-600">{deviationChartData.filter(d => d.Deviation < 0).length}</p>
-                                    </div>
-                                    <div className="bg-white/80 dark:bg-gray-900/50 rounded-2xl p-4 text-center border border-gray-100 dark:border-gray-800">
-                                        <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Periods Ahead</p>
-                                        <p className="text-2xl font-black text-emerald-600">{deviationChartData.filter(d => d.Deviation >= 0).length}</p>
-                                    </div>
-                                    <div className="bg-white/80 dark:bg-gray-900/50 rounded-2xl p-4 text-center border border-gray-100 dark:border-gray-800">
-                                        <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Projects Critical</p>
-                                        <p className="text-2xl font-black text-amber-600">{criticalProjects.filter(p => p.diff < 0).length}</p>
-                                    </div>
-                                </div>
-
-                                {/* Active Filters Context */}
-                                <div className="flex flex-wrap gap-2 text-[9px] mt-4">
-                                    <span className="bg-indigo-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">FY {selectedFY}</span>
-                                    <span className="bg-rose-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
-                                        {categoryFilter === 'all' ? 'Solar + Wind' : categoryFilter}
-                                    </span>
-                                    <span className="bg-purple-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
-                                        {timelineBusinessModel === 'All Models' ? 'All Models' : timelineBusinessModel}
-                                    </span>
-                                    <span className="bg-emerald-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
-                                        {timelineGeography === 'All Sites' ? 'All Sites' : timelineGeography}
-                                    </span>
-                                    <span className="bg-amber-500 text-white px-2 py-1 rounded-md font-bold uppercase shadow-sm">
-                                        Deviations Only
-                                    </span>
-                                </div>
-
+                            </div>
+                            {/* Filter Tags */}
+                            <div className="flex flex-wrap gap-2 text-xs">
+                                <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">FY {selectedFY}</span>
+                                <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">
+                                    {modelsTechnology === 'All' ? 'Solar + Wind' : modelsTechnology}
+                                </span>
+                                <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">
+                                    {modelsGeography === 'All Sites' ? 'All Sites' : modelsGeography}
+                                </span>
                             </div>
 
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                <ChartContainer
-                                    title="⚠️ Deviation by Period (Actual − Plan)"
-                                    controls={
-                                        <ViewPivot active={deviationView} onChange={setDeviationView} />
-                                    }
-                                >
-                                    <ResponsiveContainer width="100%" height={300}>
-                                        <BarChart data={deviationChartData}>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                                            <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                                            <YAxis axisLine={false} tickLine={false} />
-                                            <Tooltip
-                                                cursor={{ fill: '#fef2f2' }}
-                                                content={({ active, payload, label }) => {
-                                                    if (active && payload && payload.length) {
-                                                        const val = payload[0].value as number;
-                                                        return (
-                                                            <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-2xl border-2" style={{ borderColor: val >= 0 ? '#10B981' : '#F43F5E' }}>
-                                                                <p className="font-black text-lg">{label}</p>
-                                                                <p className={`text-2xl font-black ${val >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                                                    {val >= 0 ? '+' : ''}{val.toLocaleString()} MW
-                                                                </p>
-                                                                <p className="text-[10px] font-bold text-gray-400 uppercase mt-1">
-                                                                    {val >= 0 ? 'Ahead of Schedule' : 'Action Required'}
-                                                                </p>
-                                                                <p className="text-[9px] text-gray-400 mt-2 border-t pt-2">
-                                                                    {categoryFilter === 'all' ? 'All Technologies' : categoryFilter} | {timelineBusinessModel} | {timelineGeography}
-                                                                </p>
-                                                            </div>
-                                                        );
-                                                    }
-                                                    return null;
-                                                }} />
-                                            <Bar dataKey="Deviation" radius={[6, 6, 0, 0]} barSize={40}>
-                                                {deviationChartData.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={entry.Deviation >= 0 ? '#10B981' : '#F43F5E'} fillOpacity={0.8} />
-                                                ))}
-                                            </Bar>
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                </ChartContainer>
+                        </div>
 
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            <ChartContainer
+                                title="Business Model Distribution"
+                                controls={<CardSelect label="Metric" options={['Capacity Share', 'Project Count']} value={modelMetric} onChange={setModelMetric} />}
+                            >
 
+                                <ResponsiveContainer width="100%" height={300}>
+                                    <PieChart>
+                                        <Pie data={modelSplitData} innerRadius={80} outerRadius={110} dataKey="value" stroke="none">
+                                            {modelSplitData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                                        </Pie>
+                                        <Tooltip formatter={(v: any) => `${v.toLocaleString()} MW`} />
+                                        <Legend verticalAlign="bottom" iconType="circle" />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </ChartContainer>
+                            <div className="lg:col-span-2">
                                 <ChartContainer
-                                    title="📋 Critical Action Required (Top 5 Deviations)"
-                                    controls={<div className="flex flex-col items-end gap-0.5"><span className="text-[8px] font-black text-rose-500 uppercase tracking-widest">CRITICALITY</span><span className="text-[10px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-100">PRIORITY 1</span></div>}
+                                    title="📊 Model vs Target Breakdown"
+                                    controls={<CardSelect label="DRILL DOWN" options={['Project Drill-down', 'Phase Breakdown']} value={modelDrill} onChange={setModelDrill} />}
                                 >
-                                    <div className="space-y-4 h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                                        {criticalProjects.map((p, i) => (
-                                            <div key={i} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 rounded-2xl border border-transparent hover:border-rose-200 dark:hover:border-rose-900 transition-all group">
-                                                <div className="flex items-center gap-3">
-                                                    <div className={`p-2 rounded-xl ${p.diff < 0 ? 'bg-rose-100 dark:bg-rose-900/30 text-rose-600' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600'}`}>
-                                                        {p.category?.toLowerCase().includes('solar') ? '☀️' : '🌬️'}
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-sm font-black text-gray-800 dark:text-white group-hover:text-rose-600 transition-colors uppercase">{p.name}</p>
-                                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">Plan: {p.plan} MW | Actual: {p.actual} MW</p>
-                                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 h-[300px]">
+                                        {modelSplitData.map(m => (
+                                            <div key={m.name} className="bg-gray-50 dark:bg-gray-800/50 p-6 rounded-[2rem] flex flex-col justify-center items-center shadow-inner hover:shadow-md transition-all border border-transparent hover:border-gray-200 dark:hover:border-gray-700 group">
+                                                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{m.name}</span>
+                                                <span className="text-3xl font-black group-hover:scale-110 transition-transform" style={{ color: m.color }}>{m.value.toLocaleString()} MW</span>
+                                                <div className="mt-4 w-full h-1.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
+                                                    <motion.div initial={{ width: 0 }} animate={{ width: `${(m.value / overallKpi.plan) * 100}%` }} className="h-full" style={{ backgroundColor: m.color }} />
                                                 </div>
-                                                <div className="text-right">
-                                                    <p className={`text-sm font-black ${p.diff < 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
-                                                        {p.diff < 0 ? '' : '+'}{p.diff.toLocaleString()} MW
-                                                    </p>
-                                                    <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${p.diff < 0 ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                                                        {p.status}
-                                                    </span>
-                                                </div>
+                                                <span className="mt-2 text-[10px] font-bold text-gray-500 uppercase tracking-tighter">{((m.value / (overallKpi.plan || 1)) * 100).toFixed(1)}% of total</span>
                                             </div>
                                         ))}
                                     </div>
                                 </ChartContainer>
                             </div>
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                                <div className="lg:col-span-2">
-                                    <ChartContainer
-                                        title="📈 Cumulative Flow Analysis"
-                                        controls={<div className="flex flex-col items-end gap-0.5"><span className="text-[8px] font-black text-blue-500 uppercase tracking-widest">VIEW</span><span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100 uppercase">TRENDS</span></div>}
-                                    >
-                                        <ResponsiveContainer width="100%" height={300}>
-                                            <LineChart data={cumulativeData}>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                                                <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                                                <YAxis axisLine={false} tickLine={false} />
-                                                <Tooltip formatter={(v: any) => `${v.toLocaleString()} MW`} />
-                                                <Legend verticalAlign="top" align="right" />
-                                                <Line type="monotone" dataKey="Actual Commissioning" name="✅ Cumulative Actual" stroke="#10B981" strokeWidth={4} dot={{ r: 6, fill: "#10B981" }} />
-                                                <Line type="monotone" dataKey="PPA Plan" name="📋 Cumulative Plan" stroke="#3B82F6" strokeWidth={4} strokeDasharray="5 5" dot={{ r: 4 }} />
-                                            </LineChart>
-                                        </ResponsiveContainer>
-                                    </ChartContainer>
-                                </div>
+                        </div>
+                    </div>
+                )}
 
-                                <ChartContainer
-                                    title="📊 Period Accuracy"
-                                    controls={<div className="flex flex-col items-end gap-0.5"><span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">ACCURACY</span><span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100 uppercase">REAL-TIME</span></div>}
-                                >
-                                    <div className="space-y-6 flex flex-col justify-center h-full pb-8">
-                                        {(timelineView === 'monthly' ? monthlyData : timelineView === 'half-yearly' ? halfYearlyData : quarterlyData).slice(0, 4).map((q: any) => {
-                                            const plan = q['PPA Plan'] || 0;
-                                            const actual = q['Actual Commissioning'] || 0;
-                                            const perc = plan > 0 ? (actual / plan) * 100 : 100;
-                                            return (
-                                                <div key={q.name} className="space-y-1">
-                                                    <div className="flex justify-between text-[10px] font-black uppercase text-gray-400">
-                                                        <span>{q.name}</span>
-                                                        <span>{perc.toFixed(0)}%</span>
-                                                    </div>
-                                                    <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                                                        <motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(perc, 100)}%` }} className={`h-full ${perc >= 90 ? 'bg-emerald-500' : perc > 60 ? 'bg-amber-500' : 'bg-rose-500'}`} />
-                                                    </div>
+                {activeDashboard === 'deviation' && (
+                    <div className="space-y-6">
+                        {/* Deviation Dashboard Header */}
+                        <div className="bg-white dark:bg-gray-900 rounded-lg p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
+                            <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
+                                <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                                    <span className="w-1 h-5 bg-rose-500 rounded-sm" />
+                                    Deviation Analysis
+                                </h3>
+                                <div className="flex flex-wrap gap-2">
+                                    <GlobalSlicer label="Technology" options={['All', 'Solar', 'Wind']} value={categoryFilter === 'all' ? 'All' : categoryFilter === 'solar' ? 'Solar' : 'Wind'} onChange={(v: string) => setCategoryFilter(v.toLowerCase() as any)} />
+                                    <CardSelect label="Model" options={businessModelOptions} value={timelineBusinessModel} onChange={setTimelineBusinessModel} />
+                                    <CardSelect label="Site" options={geographyOptions} value={timelineGeography} onChange={setTimelineGeography} />
+                                </div>
+                            </div>
+
+                            {/* Deviation Summary Stats */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-center">
+                                    <p className="text-xs font-medium text-gray-500 uppercase">Total Deviation</p>
+                                    <p className={`text-xl font-bold ${(overallKpi.actual - overallKpi.plan) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                        {(overallKpi.actual - overallKpi.plan) >= 0 ? '+' : ''}{(overallKpi.actual - overallKpi.plan).toLocaleString()} <span className="text-sm">MW</span>
+                                    </p>
+                                </div>
+                                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-center">
+                                    <p className="text-xs font-medium text-gray-500 uppercase">Periods Behind</p>
+                                    <p className="text-xl font-bold text-rose-600">{deviationChartData.filter(d => d.Deviation < 0).length}</p>
+                                </div>
+                                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-center">
+                                    <p className="text-xs font-medium text-gray-500 uppercase">Periods Ahead</p>
+                                    <p className="text-xl font-bold text-emerald-600">{deviationChartData.filter(d => d.Deviation >= 0).length}</p>
+                                </div>
+                                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-center">
+                                    <p className="text-xs font-medium text-gray-500 uppercase">Projects Critical</p>
+                                    <p className="text-xl font-bold text-amber-600">{criticalProjects.filter(p => p.diff < 0).length}</p>
+                                </div>
+                            </div>
+
+                            {/* Filter Tags */}
+                            <div className="flex flex-wrap gap-2 text-xs">
+                                <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">FY {selectedFY}</span>
+                                <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">
+                                    {categoryFilter === 'all' ? 'Solar + Wind' : categoryFilter}
+                                </span>
+                                <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">
+                                    {timelineBusinessModel === 'All Models' ? 'All Models' : timelineBusinessModel}
+                                </span>
+                                <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">
+                                    {timelineGeography === 'All Sites' ? 'All Sites' : timelineGeography}
+                                </span>
+                            </div>
+
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <ChartContainer
+                                title="Deviation by Period (Actual − Plan)"
+                                controls={
+                                    <ViewPivot active={deviationView} onChange={setDeviationView} />
+                                }
+                            >
+                                <ResponsiveContainer width="100%" height={300}>
+                                    <BarChart data={deviationChartData}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                                        <YAxis axisLine={false} tickLine={false} />
+                                        <Tooltip
+                                            cursor={{ fill: '#fef2f2' }}
+                                            content={({ active, payload, label }) => {
+                                                if (active && payload && payload.length) {
+                                                    const val = payload[0].value as number;
+                                                    return (
+                                                        <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-2xl border-2" style={{ borderColor: val >= 0 ? '#10B981' : '#F43F5E' }}>
+                                                            <p className="font-black text-lg">{label}</p>
+                                                            <p className={`text-2xl font-black ${val >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                                {val >= 0 ? '+' : ''}{val.toLocaleString()} MW
+                                                            </p>
+                                                            <p className="text-[10px] font-bold text-gray-400 uppercase mt-1">
+                                                                {val >= 0 ? 'Ahead of Schedule' : 'Action Required'}
+                                                            </p>
+                                                            <p className="text-[9px] text-gray-400 mt-2 border-t pt-2">
+                                                                {categoryFilter === 'all' ? 'All Technologies' : categoryFilter} | {timelineBusinessModel} | {timelineGeography}
+                                                            </p>
+                                                        </div>
+                                                    );
+                                                }
+                                                return null;
+                                            }} />
+                                        <Bar dataKey="Deviation" radius={[6, 6, 0, 0]} barSize={40}>
+                                            {deviationChartData.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={entry.Deviation >= 0 ? '#10B981' : '#F43F5E'} fillOpacity={0.8} />
+                                            ))}
+                                        </Bar>
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </ChartContainer>
+
+
+                            <ChartContainer
+                                title="📋 Critical Action Required (Top 5 Deviations)"
+                                controls={<div className="flex flex-col items-end gap-0.5"><span className="text-[8px] font-black text-rose-500 uppercase tracking-widest">CRITICALITY</span><span className="text-[10px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-100">PRIORITY 1</span></div>}
+                            >
+                                <div className="space-y-4 h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                                    {criticalProjects.map((p, i) => (
+                                        <div key={i} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 rounded-2xl border border-transparent hover:border-rose-200 dark:hover:border-rose-900 transition-all group">
+                                            <div className="flex items-center gap-3">
+                                                <div className={`p-2 rounded-xl ${p.diff < 0 ? 'bg-rose-100 dark:bg-rose-900/30 text-rose-600' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600'}`}>
+                                                    {p.category?.toLowerCase().includes('solar') ? '☀️' : '🌬️'}
                                                 </div>
-                                            );
-                                        })}
-                                        {achieveView === 'yearly' && (
-                                            <div className="text-center py-8">
-                                                <p className="text-4xl font-black text-blue-600">{overallKpi.achievement.toFixed(1)}%</p>
-                                                <p className="text-xs font-bold text-gray-400 uppercase mt-2">Annual Target Met</p>
+                                                <div>
+                                                    <p className="text-sm font-black text-gray-800 dark:text-white group-hover:text-rose-600 transition-colors uppercase">{p.name}</p>
+                                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">Plan: {p.plan} MW | Actual: {p.actual} MW</p>
+                                                </div>
                                             </div>
-                                        )}
-                                    </div>
+                                            <div className="text-right">
+                                                <p className={`text-sm font-black ${p.diff < 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                                    {p.diff < 0 ? '' : '+'}{p.diff.toLocaleString()} MW
+                                                </p>
+                                                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${p.diff < 0 ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                                                    {p.status}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </ChartContainer>
+                        </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            <div className="lg:col-span-2">
+                                <ChartContainer
+                                    title="📈 Cumulative Flow Analysis"
+                                    controls={<div className="flex flex-col items-end gap-0.5"><span className="text-[8px] font-black text-blue-500 uppercase tracking-widest">VIEW</span><span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100 uppercase">TRENDS</span></div>}
+                                >
+                                    <ResponsiveContainer width="100%" height={300}>
+                                        <LineChart data={cumulativeData}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                                            <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                                            <YAxis axisLine={false} tickLine={false} />
+                                            <Tooltip formatter={(v: any) => `${v.toLocaleString()} MW`} />
+                                            <Legend verticalAlign="top" align="right" />
+                                            <Line type="monotone" dataKey="Actual Commissioning" name="✅ Cumulative Actual" stroke="#10B981" strokeWidth={4} dot={{ r: 6, fill: "#10B981" }} />
+                                            <Line type="monotone" dataKey="PPA Plan" name="📋 Cumulative Plan" stroke="#3B82F6" strokeWidth={4} strokeDasharray="5 5" dot={{ r: 4 }} />
+                                        </LineChart>
+                                    </ResponsiveContainer>
                                 </ChartContainer>
                             </div>
+
+                            <ChartContainer
+                                title="📊 Period Accuracy"
+                                controls={<div className="flex flex-col items-end gap-0.5"><span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">ACCURACY</span><span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100 uppercase">REAL-TIME</span></div>}
+                            >
+                                <div className="space-y-6 flex flex-col justify-center h-full pb-8">
+                                    {(timelineView === 'monthly' ? monthlyData : timelineView === 'half-yearly' ? halfYearlyData : quarterlyData).slice(0, 4).map((q: any) => {
+                                        const plan = q['PPA Plan'] || 0;
+                                        const actual = q['Actual Commissioning'] || 0;
+                                        const perc = plan > 0 ? (actual / plan) * 100 : 100;
+                                        return (
+                                            <div key={q.name} className="space-y-1">
+                                                <div className="flex justify-between text-[10px] font-black uppercase text-gray-400">
+                                                    <span>{q.name}</span>
+                                                    <span>{perc.toFixed(0)}%</span>
+                                                </div>
+                                                <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                                                    <motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(perc, 100)}%` }} className={`h-full ${perc >= 90 ? 'bg-emerald-500' : perc > 60 ? 'bg-amber-500' : 'bg-rose-500'}`} />
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                    {achieveView === 'yearly' && (
+                                        <div className="text-center py-8">
+                                            <p className="text-4xl font-black text-blue-600">{overallKpi.achievement.toFixed(1)}%</p>
+                                            <p className="text-xs font-bold text-gray-400 uppercase mt-2">Annual Target Met</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </ChartContainer>
                         </div>
-                    )}
-                </motion.div>
-            </AnimatePresence>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
 
 
+// Sub-components
 // Sub-components
 function GlobalSlicer({ label, options, value, onChange }: { label: string; options: string[]; value: string; onChange: (v: string) => void }) {
     const [isOpen, setIsOpen] = useState(false);
@@ -1249,42 +1182,35 @@ function GlobalSlicer({ label, options, value, onChange }: { label: string; opti
     };
 
     return (
-        <div className="relative flex flex-col gap-1 items-end">
-            <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest">{label}</span>
+        <div className="relative flex flex-col gap-1 items-start">
+            {label && <span className="text-[10px] font-medium text-[#6B7280] dark:text-gray-400 uppercase">{label}</span>}
             <button
                 ref={buttonRef}
                 onClick={handleOpen}
-                className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-xl px-3 py-1.5 text-[10px] font-black text-gray-700 transition-all shadow-sm group/gs"
+                className="flex items-center gap-2 bg-[#F5F7FA] dark:bg-gray-800 hover:bg-white dark:hover:bg-gray-700 border border-[#D1D5DB] dark:border-gray-600 rounded-md px-3 py-1.5 text-xs font-medium text-[#1F2937] dark:text-gray-200 transition-colors"
             >
-                {value.toUpperCase()}
-                <span className={`text-[8px] text-gray-400 group-hover/gs:text-gray-600 transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
+                {value}
+                <span className={`text-[10px] text-[#6B7280] transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
             </button>
 
-            <AnimatePresence>
-                {isOpen && (
-                    <>
-                        <div className="fixed inset-0 z-[200]" onClick={() => setIsOpen(false)} />
-                        <motion.div
-                            initial={{ opacity: 0, y: -5, scale: 0.95 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, y: -5, scale: 0.95 }}
-                            className="absolute top-full mt-2 right-0 w-48 bg-white border border-gray-200 rounded-xl shadow-2xl p-1.5 z-[210]"
-                        >
-                            <div className="max-h-80 overflow-y-auto custom-scrollbar space-y-0.5">
-                                {options.map(o => (
-                                    <button
-                                        key={o}
-                                        onClick={() => { onChange(o.toLowerCase() as any); setIsOpen(false); }}
-                                        className={`w-full text-left px-3 py-2 text-[10px] font-black uppercase rounded-lg transition-colors ${value.toLowerCase() === o.toLowerCase() ? 'bg-indigo-500 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
-                                    >
-                                        {o}
-                                    </button>
-                                ))}
-                            </div>
-                        </motion.div>
-                    </>
-                )}
-            </AnimatePresence>
+            {isOpen && (
+                <>
+                    <div className="fixed inset-0 z-[200]" onClick={() => setIsOpen(false)} />
+                    <div className="absolute top-full mt-1 right-0 min-w-[120px] bg-white dark:bg-gray-800 border border-[#D1D5DB] dark:border-gray-700 rounded-md shadow-lg p-1 z-[210]">
+                        <div className="max-h-60 overflow-y-auto">
+                            {options.map(o => (
+                                <button
+                                    key={o}
+                                    onClick={() => { onChange(o.toLowerCase() as any); setIsOpen(false); }}
+                                    className={`w-full text-left px-3 py-1.5 text-xs font-medium rounded transition-colors ${value.toLowerCase() === o.toLowerCase() ? 'bg-[#0B74B0] text-white' : 'text-[#1F2937] dark:text-gray-200 hover:bg-[#F5F7FA] dark:hover:bg-gray-700'}`}
+                                >
+                                    {o}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </>
+            )}
         </div>
     );
 }
@@ -1292,20 +1218,20 @@ function GlobalSlicer({ label, options, value, onChange }: { label: string; opti
 
 
 
-function ViewPivot({ active, onChange, label = "VIEW PERIOD" }: { active: string; onChange: (v: any) => void; label?: string }) {
+function ViewPivot({ active, onChange, label = "Period" }: { active: string; onChange: (v: any) => void; label?: string }) {
     return (
-        <div className="flex flex-col items-end gap-1">
-            <span className="text-[8px] font-black text-gray-500 dark:text-indigo-400 uppercase tracking-[0.15em]">{label}</span>
-            <div className="bg-gray-100 dark:bg-gray-800 p-1 rounded-xl flex items-center gap-1 border border-gray-200 dark:border-gray-700">
+        <div className="flex flex-col items-start gap-1">
+            {label && <span className="text-[10px] font-medium text-[#6B7280] dark:text-gray-400 uppercase">{label}</span>}
+            <div className="h-8 bg-[#F3F4F6] dark:bg-gray-800 p-1 rounded-md flex items-center border border-[#D1D5DB] dark:border-gray-700 box-border">
                 {['yearly', 'half-yearly', 'quarterly', 'monthly'].map((v) => (
                     <button
                         key={v}
                         onClick={() => onChange(v as any)}
-                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all duration-200 whitespace-nowrap ${active === v
-                            ? 'bg-indigo-500 text-white shadow-md'
-                            : 'bg-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-700'}`}
+                        className={`h-full px-3 rounded text-[10px] sm:text-xs font-medium transition-colors whitespace-nowrap flex items-center ${active === v
+                            ? 'bg-[#0B74B0] text-white shadow-sm'
+                            : 'text-[#4B5563] dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700'}`}
                     >
-                        {v === 'half-yearly' ? 'HALF' : v.replace('-yearly', '').toUpperCase()}
+                        {v === 'half-yearly' ? 'Half' : v.charAt(0).toUpperCase() + v.slice(1).replace('-yearly', '')}
                     </button>
                 ))}
             </div>
@@ -1324,56 +1250,47 @@ function MultiSlicer({ label, options, selected, onChange }: { label: string; op
 
     return (
         <div className="relative flex flex-col gap-1">
-            <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest">{label}</span>
+            <span className="text-[10px] font-medium text-[#6B7280] dark:text-gray-400 uppercase">{label}</span>
             <button
                 ref={buttonRef}
                 onClick={handleOpen}
-                className="flex items-center justify-between gap-3 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-xl px-3 py-1.5 text-[10px] font-black text-gray-700 transition-all shadow-sm min-w-[100px]"
+                className="h-8 flex items-center justify-between gap-2 bg-white dark:bg-gray-800 hover:bg-[#F9FAFB] dark:hover:bg-gray-700 border border-[#D1D5DB] dark:border-gray-600 rounded-md px-3 text-xs font-medium text-[#1F2937] dark:text-gray-200 transition-colors min-w-[100px]"
             >
-                <span className="truncate">{selected.includes('all') ? 'ALL' : `${selected.length} SEL`}</span>
-                <span className={`text-[8px] text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
+                <span className="truncate">{selected.includes('all') ? 'All' : `${selected.length} Selected`}</span>
+                <span className={`text-[10px] text-[#6B7280] transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
             </button>
 
-            <AnimatePresence>
-                {isOpen && (
-                    <>
-                        <div className="fixed inset-0 z-[200]" onClick={() => setIsOpen(false)} />
-                        <motion.div
-                            initial={{ scale: 0.95, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.95, opacity: 0 }}
-                            className="absolute top-full mt-2 left-0 w-52 bg-white border border-gray-200 rounded-xl shadow-2xl p-2 z-[210]"
-                        >
-
-
-                            <div className="space-y-1 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
-                                <button
-                                    onClick={() => { onChange(['all']); setIsOpen(false); }}
-                                    className={`w-full text-left px-3 py-1.5 text-[10px] font-bold rounded-lg transition-colors ${selected.includes('all') ? 'bg-indigo-500 text-white' : 'text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-                                >
-                                    Show All
-                                </button>
-                                {options.map((o) => (
-                                    <div key={o.value} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={selected.includes(o.value)}
-                                            onChange={(e) => {
-                                                const next = e.target.checked
-                                                    ? [...selected.filter(i => i !== 'all'), o.value]
-                                                    : selected.filter(i => i !== o.value);
-                                                onChange(next.length === 0 ? ['all'] : next);
-                                            }}
-                                            className="rounded border-gray-300 text-indigo-500 focus:ring-indigo-500 w-3 h-3"
-                                        />
-                                        <span className="text-[10px] font-medium text-gray-600 dark:text-gray-300">{o.label}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </motion.div>
-                    </>
-                )}
-            </AnimatePresence>
+            {isOpen && (
+                <>
+                    <div className="fixed inset-0 z-[200]" onClick={() => setIsOpen(false)} />
+                    <div className="absolute top-full mt-1 left-0 w-48 bg-white dark:bg-gray-800 border border-[#D1D5DB] dark:border-gray-700 rounded-md shadow-lg p-1 z-[210]">
+                        <div className="max-h-60 overflow-y-auto">
+                            <button
+                                onClick={() => { onChange(['all']); setIsOpen(false); }}
+                                className={`w-full text-left px-3 py-1.5 text-xs font-medium rounded transition-colors ${selected.includes('all') ? 'bg-[#0B74B0] text-white' : 'text-[#374151] dark:text-gray-200 hover:bg-[#F3F4F6] dark:hover:bg-gray-700'}`}
+                            >
+                                Show All
+                            </button>
+                            {options.map((o) => (
+                                <div key={o.value} className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#F3F4F6] dark:hover:bg-gray-700 rounded cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={selected.includes(o.value)}
+                                        onChange={(e) => {
+                                            const next = e.target.checked
+                                                ? [...selected.filter(i => i !== 'all'), o.value]
+                                                : selected.filter(i => i !== o.value);
+                                            onChange(next.length === 0 ? ['all'] : next);
+                                        }}
+                                        className="rounded border-gray-300 text-[#0B74B0] focus:ring-[#0B74B0] w-3 h-3"
+                                    />
+                                    <span className="text-xs font-medium text-[#374151] dark:text-gray-300">{o.label}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </>
+            )}
         </div>
     );
 }
@@ -1388,56 +1305,49 @@ function CardSelect({ label, options, value, onChange, variant = 'light' }: { la
         setIsOpen(!isOpen);
     };
 
-    // Light variant: for white backgrounds (gray text, gray bg)
-    // Dark variant: for colored/dark backgrounds (white text, white/transparent bg)
+    // Light variant: for white backgrounds
+    // Dark variant: for colored/dark backgrounds
     const labelClass = variant === 'dark'
-        ? "text-[8px] font-black text-white/70 uppercase tracking-[0.15em] mb-1"
-        : "text-[8px] font-black text-gray-500 uppercase tracking-[0.15em] mb-1";
+        ? "text-[10px] font-medium text-white/70 uppercase mb-1"
+        : "text-[10px] font-medium text-[#6B7280] uppercase mb-1";
 
     const buttonClass = variant === 'dark'
-        ? "flex items-center gap-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm border border-white/30 rounded-xl px-3 py-1.5 text-[10px] font-black uppercase text-white transition-all shadow-sm group/btn"
-        : "flex items-center gap-2 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-xl px-3 py-1.5 text-[10px] font-black uppercase text-gray-700 transition-all shadow-sm group/btn";
+        ? "h-8 w-[150px] flex items-center justify-between gap-2 bg-white/20 hover:bg-white/30 border border-white/30 rounded-md px-3 text-xs font-medium text-white transition-colors"
+        : "h-8 w-[150px] flex items-center justify-between gap-2 bg-[#F5F7FA] dark:bg-gray-800 hover:bg-white dark:hover:bg-gray-700 border border-[#D1D5DB] dark:border-gray-600 rounded-md px-3 text-xs font-medium text-[#1F2937] dark:text-gray-200 transition-colors";
 
     const arrowClass = variant === 'dark'
-        ? `text-[8px] text-white/60 group-hover/btn:text-white transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`
-        : `text-[8px] text-gray-400 group-hover/btn:text-gray-600 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`;
+        ? `text-[10px] text-white/60 transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`
+        : `text-[10px] text-[#6B7280] transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`;
 
     return (
-        <div className="relative flex flex-col items-start min-w-[80px]">
-            <span className={labelClass}>{label}</span>
+        <div className="relative flex flex-col items-start">
+            {label && <span className={labelClass}>{label}</span>}
             <button
                 ref={buttonRef}
                 onClick={handleOpen}
                 className={buttonClass}
             >
-                {value}
+                <span className="truncate flex-1 text-left" title={value}>{value}</span>
                 <span className={arrowClass}>▼</span>
             </button>
-            <AnimatePresence>
-                {isOpen && (
-                    <>
-                        <div className="fixed inset-0 z-[200]" onClick={() => setIsOpen(false)} />
-                        <motion.div
-                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                            className="absolute top-full mt-2 right-0 w-56 bg-white border border-gray-200 rounded-xl shadow-2xl p-1.5 z-[210] overflow-hidden"
-                        >
-                            <div className="max-h-80 overflow-y-auto custom-scrollbar space-y-0.5">
-                                {options.map(o => (
-                                    <button
-                                        key={o}
-                                        onClick={() => { onChange?.(o); setIsOpen(false); }}
-                                        className={`w-full text-left px-4 py-2 text-[10px] font-black uppercase rounded-lg transition-colors ${value === o ? 'bg-indigo-500 text-white shadow-md' : 'text-gray-600 hover:bg-indigo-50 hover:text-indigo-600'}`}
-                                    >
-                                        {o}
-                                    </button>
-                                ))}
-                            </div>
-                        </motion.div>
-                    </>
-                )}
-            </AnimatePresence>
+            {isOpen && (
+                <>
+                    <div className="fixed inset-0 z-[200]" onClick={() => setIsOpen(false)} />
+                    <div className="absolute top-full mt-1 right-0 min-w-[140px] bg-white dark:bg-gray-800 border border-[#D1D5DB] dark:border-gray-700 rounded-md shadow-lg p-1 z-[210]">
+                        <div className="max-h-60 overflow-y-auto">
+                            {options.map(o => (
+                                <button
+                                    key={o}
+                                    onClick={() => { onChange?.(o); setIsOpen(false); }}
+                                    className={`w-full text-left px-3 py-1.5 text-xs font-medium rounded transition-colors ${value === o ? 'bg-[#0B74B0] text-white' : 'text-[#1F2937] dark:text-gray-200 hover:bg-[#F5F7FA] dark:hover:bg-gray-700'}`}
+                                >
+                                    {o}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </>
+            )}
         </div>
     );
 }
@@ -1445,91 +1355,81 @@ function CardSelect({ label, options, value, onChange, variant = 'light' }: { la
 
 
 
-function KPICard({ label, value, unit, trend, gradient, scope, onScopeChange, options }: { label: string; value: any; unit: string; trend: string; gradient: string; scope: string; onScopeChange: (v: string) => void; options: string[] }) {
+function KPICard({ label, value, unit, trend, gradient }: { label: string; value: any; unit: string; trend: string; gradient: string }) {
+    // Map gradient to Adani brand color gradients
+    const getBgColor = () => {
+        if (gradient.includes('blue') || gradient.includes('indigo')) return 'bg-gradient-to-br from-[#0B74B0] to-[#095D8D]'; // Adani Blue Gradient
+        if (gradient.includes('emerald') || gradient.includes('teal')) return 'bg-gradient-to-br from-[#00B16B] to-[#008F56]'; // Adani Green Gradient
+        if (gradient.includes('purple')) return 'bg-gradient-to-br from-[#75479C] to-[#5D387C]'; // Adani Purple Gradient
+        if (gradient.includes('rose') || gradient.includes('red')) return 'bg-gradient-to-br from-[#BD3861] to-[#992D4E]'; // Adani Maroon Gradient
+        return 'bg-gradient-to-br from-[#0B74B0] to-[#095D8D]';
+    };
+
     return (
-        <motion.div
-            whileHover={{ y: -5 }}
-            className={`relative overflow-hidden bg-gradient-to-br ${gradient} p-4 sm:p-6 rounded-[2rem] shadow-xl border border-white/20`}
-        >
-            <div className="relative z-10 flex flex-col h-full justify-between gap-3 sm:gap-4">
-                <div className="flex justify-between items-start">
-                    <div className="space-y-1">
-                        <p className="text-[9px] sm:text-[10px] font-black text-white/70 uppercase tracking-widest">{label}</p>
-                        <div className="flex items-baseline gap-1 sm:gap-2">
-                            <h2 className="text-2xl sm:text-4xl font-black text-white leading-none">
+        <div className={`${getBgColor()} p-4 rounded-xl shadow-md border border-white/10 relative overflow-hidden group`}>
+            {/* Glossy Effect overlay */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 pointer-events-none" />
+            <div className="absolute bottom-0 left-0 w-24 h-24 bg-black/5 rounded-full -ml-12 -mb-12 pointer-events-none" />
+
+            <div className="flex flex-col h-full justify-between relative z-10 gap-3">
+                <div className="flex justify-between items-start gap-2">
+                    <div className="space-y-1 sm:space-y-2 flex-1 min-w-0">
+                        <p className="text-[10px] font-bold text-white/90 uppercase tracking-widest leading-tight">{label}</p>
+                        <div className="flex items-baseline gap-1.5 flex-wrap">
+                            <h2 className="text-2xl sm:text-3xl font-bold text-white leading-none shadow-sm drop-shadow-sm">
                                 {typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 1 }) : value}
                             </h2>
-                            <span className="text-xs sm:text-lg font-bold text-white/50">{unit}</span>
-                        </div>
-                    </div>
-                    <CardSelect
-                        label="SCOPE"
-                        options={options}
-                        value={scope}
-                        onChange={onScopeChange}
-                        variant="dark"
-                    />
-
-                </div>
-                <div className="flex items-center justify-between mt-auto pt-2">
-                    <div className="bg-white/10 backdrop-blur-md rounded-2xl py-1.5 px-4 self-start border border-white/10">
-                        <span className="text-[10px] sm:text-xs font-black text-white uppercase tracking-tight">{trend}</span>
-                    </div>
-                    <div className="flex flex-col items-end opacity-40">
-                        <span className="text-[7px] font-black text-white uppercase tracking-[0.2em]">DATA VERIFIED</span>
-                        <div className="flex gap-0.5 mt-0.5">
-                            <div className="w-1 h-1 bg-white rounded-full animate-pulse" />
-                            <div className="w-1 h-1 bg-white rounded-full opacity-50" />
-                            <div className="w-1 h-1 bg-white rounded-full opacity-30" />
+                            <span className="text-sm font-medium text-white/80">{unit}</span>
                         </div>
                     </div>
                 </div>
+                <div className="bg-white/20 backdrop-blur-sm rounded-lg py-1.5 px-3 self-start max-w-full border border-white/10 shadow-sm">
+                    <span className="text-[10px] sm:text-[11px] font-semibold text-white block truncate tracking-wide">{trend}</span>
+                </div>
             </div>
-            <div className="absolute top-0 right-0 p-4 opacity-10 transform translate-x-1/4 -translate-y-1/4">
-                <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full border-[15px] sm:border-[20px] border-white" />
-            </div>
-        </motion.div>
+        </div>
     );
 }
 
-function ChartContainer({ title, children, controls }: { title: string; children: React.ReactNode; controls?: React.ReactNode }) {
+function ChartContainer({ title, children, controls, className = "" }: { title: string; children: React.ReactNode; controls?: React.ReactNode; className?: string }) {
+    // Remove emojis from title for corporate look
+    const cleanTitle = title.replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA00}-\u{1FA6F}]|[\u{1FA70}-\u{1FAFF}]|[\u{231A}-\u{231B}]|[\u{23E9}-\u{23F3}]|[\u{23F8}-\u{23FA}]|[\u{25AA}-\u{25AB}]|[\u{25B6}]|[\u{25C0}]|[\u{25FB}-\u{25FE}]|[\u{2614}-\u{2615}]|[\u{2648}-\u{2653}]|[\u{267F}]|[\u{2693}]|[\u{26A1}]|[\u{26AA}-\u{26AB}]|[\u{26BD}-\u{26BE}]|[\u{26C4}-\u{26C5}]|[\u{26CE}]|[\u{26D4}]|[\u{26EA}]|[\u{26F2}-\u{26F3}]|[\u{26F5}]|[\u{26FA}]|[\u{26FD}]|[\u{2702}]|[\u{2705}]|[\u{2708}-\u{270D}]|[\u{270F}]|[\u{2712}]|[\u{2714}]|[\u{2716}]|[\u{271D}]|[\u{2721}]|[\u{2728}]|[\u{2733}-\u{2734}]|[\u{2744}]|[\u{2747}]|[\u{274C}]|[\u{274E}]|[\u{2753}-\u{2755}]|[\u{2757}]|[\u{2763}-\u{2764}]|[\u{2795}-\u{2797}]|[\u{27A1}]|[\u{27B0}]|[\u{27BF}]|[\u{2934}-\u{2935}]|[\u{2B05}-\u{2B07}]|[\u{2B1B}-\u{2B1C}]|[\u{2B50}]|[\u{2B55}]|[\u{3030}]|[\u{303D}]|[\u{3297}]|[\u{3299}]/gu, '').replace(/▣/g, '').trim();
+
     return (
-        <div className="bg-white dark:bg-gray-950 border border-gray-100 dark:border-gray-800 rounded-[2.5rem] p-4 lg:p-8 shadow-sm hover:shadow-2xl transition-all duration-500 overflow-visible relative group/card flex-1">
-            <div className="flex flex-col xl:flex-row justify-between xl:items-end gap-6 mb-8">
-                <div className="space-y-1">
-                    <h3 className="text-lg lg:text-xl font-black text-gray-900 dark:text-white flex items-center gap-3">
-                        <span className="w-1 h-6 bg-blue-600 rounded-full shadow-[0_0_15px_rgba(37,99,235,0.4)]" />
-                        {title}
-                    </h3>
-                    <div className="w-12 h-1 bg-blue-100 dark:bg-blue-900/50 rounded-full" />
-                </div>
+        <div className={`bg-white dark:bg-[#1F2937] border-t-4 border-t-[#0B74B0] border border-[#D1D5DB] dark:border-gray-700 rounded-lg p-3 sm:p-4 lg:p-6 shadow-md hover:shadow-lg transition-shadow overflow-visible flex flex-col ${className}`}>
+            <div className="flex flex-wrap justify-between items-start gap-y-2 gap-x-4 mb-4 sm:mb-6 min-h-[32px] border-b border-gray-100 dark:border-gray-700 pb-2">
+                <h3 className="text-sm sm:text-base font-bold text-[#1F2937] dark:text-white flex items-start gap-2">
+                    <span className="leading-tight">{cleanTitle}</span>
+                </h3>
                 {controls && (
-                    <div className="flex flex-wrap items-end gap-3 xl:justify-end">
+                    <div className="flex flex-wrap items-center justify-end gap-2 flex-grow sm:flex-grow-0">
                         {controls}
                     </div>
                 )}
             </div>
-            {children}
+            <div className="flex-1 w-full relative">
+                {children}
+            </div>
         </div>
     );
 }
 
 // Custom Styles
 const style = `
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 4px;
+                        .custom-scrollbar::-webkit-scrollbar {
+                            width: 4px;
   }
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
+                        .custom-scrollbar::-webkit-scrollbar-track {
+                            background: transparent;
   }
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: #E2E8F0;
-    border-radius: 10px;
+                        .custom-scrollbar::-webkit-scrollbar-thumb {
+                            background: #E2E8F0;
+                        border-radius: 10px;
   }
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #CBD5E1;
+                        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                            background: #CBD5E1;
   }
-`;
+                        `;
 
 if (typeof document !== 'undefined') {
     const styleTag = document.createElement('style');
