@@ -5,8 +5,8 @@ import { useEffect, useRef, useState } from "react";
 
 const ShuffleHero = () => {
   return (
-    <section className="w-full px-8 py-12 grid grid-cols-1 md:grid-cols-2 items-center gap-8 max-w-6xl mx-auto rounded-3xl overflow-hidden relative">
-      <div className="p-8">
+    <section className="w-full min-h-screen px-8 py-12 grid grid-cols-1 md:grid-cols-2 items-center gap-8 max-w-6xl mx-auto rounded-3xl overflow-hidden relative">
+      <div className="p-8 w-full">
         {/* Adani Logo */}
         <div className="mb-6">
           <img 
@@ -19,7 +19,9 @@ const ShuffleHero = () => {
           Commissioning Execution Tracker Portal
         </h1>
       </div>
-      <ShuffleGrid />
+      <div className="w-full h-full flex items-center justify-center">
+        <ShuffleGrid />
+      </div>
     </section>
   );
 };
@@ -164,7 +166,7 @@ const ShuffleGrid = () => {
   };
 
   return (
-    <div className="grid grid-cols-4 grid-rows-4 h-[450px] gap-3">
+    <div className="grid grid-cols-4 grid-rows-4 h-[400px] md:h-[450px] lg:h-[500px] w-full max-w-lg gap-3">
       {generateSquares(shuffledData)}
     </div>
   );
