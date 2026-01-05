@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import localFont from "next/font/local";
 import "./globals.css";
 import { ThemeProvider } from "@/app/components/ThemeProvider";
@@ -24,6 +25,21 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full">
+      <head>
+        {process.env.NODE_ENV === "development" && (
+          <Script
+            src="//unpkg.com/react-grab/dist/index.global.js"
+            crossOrigin="anonymous"
+            strategy="beforeInteractive"
+          />
+        )}
+        {process.env.NODE_ENV === "development" && (
+          <Script
+            src="//unpkg.com/@react-grab/gemini/dist/client.global.js"
+            strategy="lazyOnload"
+          />
+        )}
+      </head>
       <body
         className={`${adani.variable} antialiased h-full font-sans`}
         style={{ fontFamily: 'var(--font-adani)' }}

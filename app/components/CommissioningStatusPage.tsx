@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -148,17 +148,23 @@ export default function CommissioningStatusPage() {
   const [filters, setFilters] = useState({
     category: '',
     projectType: '',
-    planActual: 'Plan',  // Default to Plan view
+    planActual: 'Plan',  // Back to Plan default
     spv: '',
     section: '',
     showExcluded: true, // Show items excluded from totals
   });
 
   // Editing state
-  const [editingProject, setEditingProject] = useState<CommissioningProject | null>(null);
+  const [editingCell, setEditingCell] = useState<{ projectId: number, field: string } | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState<{ success?: number; failed?: number; errors?: string[] } | null>(null);
+  const [uploadResult, setUploadResult] = useState<{
+    success?: number;
+    failed?: number;
+    errors?: string[];
+    sheets_found?: string[];
+    sheet_count?: number;
+  } | null>(null);
 
   // Fetch projects
   const { data: projects = [], isLoading: projectsLoading } = useQuery({
@@ -428,25 +434,15 @@ export default function CommissioningStatusPage() {
     setFilters({ category: '', projectType: '', planActual: 'Plan', spv: '', section: '', showExcluded: true });
   };
 
-  // Handle edit project
-  const handleEditProject = (project: CommissioningProject) => {
-    if (!isAdmin) {
-      alert('Only admin users can edit projects.');
-      return;
-    }
-    setEditingProject({ ...project });
-  };
-
-  // Handle save edit
-  const handleSaveEdit = () => {
-    if (!editingProject) return;
-
+  // Handle inline cell save
+  const handleCellSave = (project: CommissioningProject, field: string, value: number | null) => {
+    const updatedProject = { ...project, [field]: value };
     const updatedProjects = projects.map((p: CommissioningProject) =>
-      p.id === editingProject.id ? editingProject : p
+      p.id === project.id ? updatedProject : p
     );
 
     saveProjectsMutation.mutate(updatedProjects);
-    setEditingProject(null);
+    setEditingCell(null);
   };
 
   // Handle delete project
@@ -476,7 +472,8 @@ export default function CommissioningStatusPage() {
       formData.append('file', file);
       formData.append('fiscalYear', fiscalYear);
 
-      const response = await fetch('/api/upload-commissioning-data', {
+      // Use the new upload-excel endpoint that reads all sheets
+      const response = await fetch('/api/upload-excel', {
         method: 'POST',
         body: formData,
       });
@@ -486,13 +483,15 @@ export default function CommissioningStatusPage() {
       if (!response.ok) {
         setUploadResult({
           failed: data.failed || 0,
-          errors: data.errors || ['Upload failed']
+          errors: data.errors || data.parse_errors || [data.detail || 'Upload failed']
         });
       } else {
         setUploadResult({
-          success: data.success || 0,
-          failed: data.failed || 0,
-          errors: data.errors || []
+          success: data.projects_imported || 0,
+          failed: 0,
+          errors: data.parse_errors || [],
+          sheets_found: data.sheets_found,
+          sheet_count: data.sheet_count
         });
         // Refresh data
         queryClient.invalidateQueries({ queryKey: ['commissioning-projects', fiscalYear] });
@@ -656,11 +655,11 @@ export default function CommissioningStatusPage() {
             </select>
           </div>
           <div className="flex-1 min-w-[140px]">
-            <label className="block text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Capacity Point</label>
+            <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">Capacity Point</label>
             <select
               value={filters.planActual}
               onChange={(e) => handleFilterChange('planActual', e.target.value)}
-              className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/20"
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded text-sm font-semibold text-gray-900 dark:text-white focus:ring-1 focus:ring-blue-500/20 outline-none"
             >
               {filterOptions.planActuals.map((pa: string) => (
                 <option key={pa} value={pa}>{pa === 'Actual' ? 'Actual / Fcst' : pa}</option>
@@ -689,28 +688,24 @@ export default function CommissioningStatusPage() {
         </div>
       </div>
 
-      {/* Summary Cards - Responsive */}
+      {/* Summary Cards - Minimalist Adani Style */}
       {activeTab === 'overview' && !filters.section && !filters.category && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[2rem] p-6 shadow-xl shadow-blue-500/10 border border-white/10 group hover:-translate-y-1 transition-transform">
-            <h3 className="text-[10px] font-black text-white/60 uppercase tracking-widest mb-1">Total Included Capacity</h3>
-            <p className="text-3xl font-black text-white">{formatNumber(hierarchicalTotals.total.totalCapacity)} <span className="text-lg opacity-60">MW</span></p>
-            <div className="mt-4 h-1 w-12 bg-white/20 rounded-full" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 shadow-sm">
+            <h3 className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Total Included Capacity</h3>
+            <p className="text-2xl font-bold text-[#0B74B0] dark:text-blue-400">{formatNumber(hierarchicalTotals.total.totalCapacity)} <span className="text-sm font-normal text-gray-400">MW</span></p>
           </div>
-          <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-[2rem] p-6 shadow-xl shadow-emerald-500/10 border border-white/10 group hover:-translate-y-1 transition-transform">
-            <h3 className="text-[10px] font-black text-white/60 uppercase tracking-widest mb-1">Achieved till Oct-25</h3>
-            <p className="text-3xl font-black text-white">{formatNumber(hierarchicalTotals.total.cummTillOct)} <span className="text-lg opacity-60">MW</span></p>
-            <div className="mt-4 h-1 w-12 bg-white/20 rounded-full" />
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 shadow-sm">
+            <h3 className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Achieved till Oct-25</h3>
+            <p className="text-2xl font-bold text-[#75479C] dark:text-purple-400">{formatNumber(hierarchicalTotals.total.cummTillOct)} <span className="text-sm font-normal text-gray-400">MW</span></p>
           </div>
-          <div className="bg-gradient-to-br from-orange-400 to-amber-600 rounded-[2rem] p-6 shadow-xl shadow-orange-500/10 border border-white/10 group hover:-translate-y-1 transition-transform">
-            <h3 className="text-[10px] font-black text-white/60 uppercase tracking-widest mb-1">Overall Solar Capacity</h3>
-            <p className="text-3xl font-black text-white">{formatNumber(hierarchicalTotals.solar.totalCapacity)} <span className="text-lg opacity-60">MW</span></p>
-            <div className="mt-4 h-1 w-12 bg-white/20 rounded-full" />
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 shadow-sm border-l-4 border-l-orange-500">
+            <h3 className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Overall Solar Capacity</h3>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{formatNumber(hierarchicalTotals.solar.totalCapacity)} <span className="text-sm font-normal text-gray-400">MW</span></p>
           </div>
-          <div className="bg-gradient-to-br from-cyan-500 to-blue-500 rounded-[2rem] p-6 shadow-xl shadow-cyan-500/10 border border-white/10 group hover:-translate-y-1 transition-transform">
-            <h3 className="text-[10px] font-black text-white/60 uppercase tracking-widest mb-1">Overall Wind Capacity</h3>
-            <p className="text-3xl font-black text-white">{formatNumber(hierarchicalTotals.wind.totalCapacity)} <span className="text-lg opacity-60">MW</span></p>
-            <div className="mt-4 h-1 w-12 bg-white/20 rounded-full" />
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700 shadow-sm border-l-4 border-l-cyan-500">
+            <h3 className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Overall Wind Capacity</h3>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">{formatNumber(hierarchicalTotals.wind.totalCapacity)} <span className="text-sm font-normal text-gray-400">MW</span></p>
           </div>
         </div>
       )}
@@ -751,26 +746,25 @@ export default function CommissioningStatusPage() {
         </div>
       )}
 
-      {/* Hierarchy Breadcrumb */}
-      <div className={`rounded-lg p-3 text-sm font-medium ${filters.section || filters.category
-        ? 'bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
-        : 'bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300'
+      {/* Hierarchy Breadcrumb - Clean Style */}
+      <div className={`rounded-lg p-3 text-xs font-semibold ${filters.section || filters.category
+        ? 'bg-gray-100 dark:bg-gray-800 border-l-4 border-l-amber-500 text-gray-700 dark:text-gray-300'
+        : 'bg-gray-100 dark:bg-gray-800 border-l-4 border-l-[#0B74B0] text-gray-700 dark:text-gray-300'
         }`}>
-        <span>AGEL Overall FY 2025–26</span>
+        <span className="opacity-60 uppercase tracking-wider">Commissioning Status</span>
+        <span className="mx-2 text-gray-400">/</span>
+        <span className="uppercase tracking-wider">AGEL Overall FY 2025–26</span>
         {filters.category && (
           <>
-            <span className="mx-2">→</span>
-            <span className="font-bold">{filters.category === 'solar' ? '● Solar' : '◆ Wind'}</span>
+            <span className="mx-2 text-gray-400">/</span>
+            <span className="text-[#0B74B0] dark:text-blue-400 uppercase tracking-wider font-bold">{filters.category}</span>
           </>
         )}
         {filters.section && (
           <>
-            <span className="mx-2">→</span>
-            <span className="font-bold">{getCategoryDisplayName(filters.section)}</span>
+            <span className="mx-2 text-gray-400">/</span>
+            <span className="text-[#75479C] dark:text-purple-400 uppercase tracking-wider font-bold">{getCategoryDisplayName(filters.section)}</span>
           </>
-        )}
-        {(filters.section || filters.category) && (
-          <span className="ml-3 text-xs opacity-75">(Filtered View - Clear filters to see overall summary)</span>
         )}
       </div>
 
@@ -787,25 +781,23 @@ export default function CommissioningStatusPage() {
 
         <div className="overflow-x-auto overflow-y-auto max-h-[800px] border dark:border-gray-700 rounded-lg">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 border-collapse">
-            <thead className="bg-gray-100 dark:bg-gray-900 sticky top-0 z-30 shadow-sm">
+            <thead className="bg-[#f8f9fa] dark:bg-gray-900 sticky top-0 z-30">
               <tr>
-                <th className="sticky left-0 z-40 bg-gray-100 dark:bg-gray-900 px-3 py-4 text-left text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">S.No</th>
-                <th className="sticky left-[52px] z-40 px-3 py-4 text-left text-[10px] font-black text-gray-800 dark:text-white uppercase border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 whitespace-nowrap shadow-[2px_0_5px_rgba(0,0,0,0.05)]">Project Name</th>
-                <th className="px-3 py-4 text-left text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900">SPV</th>
-                <th className="px-3 py-4 text-left text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900">Type</th>
-                <th className="px-3 py-4 text-left text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Location/PSS</th>
-                <th className="px-3 py-4 text-left text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Capacity</th>
-                <th className="px-3 py-4 text-left text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Capacity Type</th>
+                <th className="sticky left-0 z-40 bg-[#f8f9fa] dark:bg-gray-900 px-3 py-2 text-left text-[9px] font-bold text-gray-500 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">S.No</th>
+                <th className="sticky left-[52px] z-40 px-3 py-2 text-left text-[9px] font-bold text-gray-800 dark:text-white uppercase border-b border-gray-200 dark:border-gray-800 bg-[#f8f9fa] dark:bg-gray-900 whitespace-nowrap">Project Name</th>
+                <th className="px-3 py-2 text-left text-[9px] font-bold text-gray-500 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800 bg-[#f8f9fa] dark:bg-gray-900">SPV</th>
+                <th className="px-3 py-2 text-left text-[9px] font-bold text-gray-500 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800 bg-[#f8f9fa] dark:bg-gray-900">Type</th>
+                <th className="px-3 py-2 text-left text-[9px] font-bold text-gray-500 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800 bg-[#f8f9fa] dark:bg-gray-900">Location</th>
+                <th className="px-3 py-2 text-left text-[9px] font-bold text-gray-500 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800 bg-[#f8f9fa] dark:bg-gray-900">Capacity</th>
                 {monthLabels.map((month, idx) => (
-                  <th key={idx} className="px-2 py-4 text-center text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800 min-w-[70px]">{month}</th>
+                  <th key={idx} className="px-2 py-2 text-center text-[9px] font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800 min-w-[65px]">{month}</th>
                 ))}
-                <th className="px-3 py-4 text-center text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Total</th>
-                <th className="px-3 py-4 text-center text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Cumm Oct</th>
-                <th className="px-3 py-4 text-center text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Q1</th>
-                <th className="px-3 py-4 text-center text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Q2</th>
-                <th className="px-3 py-4 text-center text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Q3</th>
-                <th className="px-3 py-4 text-center text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Q4</th>
-                {isAdmin && <th className="px-3 py-4 text-center text-xs font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">Actions</th>}
+                <th className="px-3 py-2 text-center text-[9px] font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800 bg-[#f8f9fa] dark:bg-gray-900">Total</th>
+                <th className="px-3 py-2 text-center text-[9px] font-bold text-[#0B74B0] dark:text-blue-400 uppercase border-b border-gray-200 dark:border-gray-800 bg-[#f8f9fa] dark:bg-gray-900">Cumm Oct</th>
+                <th className="px-3 py-2 text-center text-[9px] font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800 bg-[#f8f9fa] dark:bg-gray-900">Q1</th>
+                <th className="px-3 py-2 text-center text-[9px] font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800 bg-[#f8f9fa] dark:bg-gray-900">Q2</th>
+                <th className="px-3 py-2 text-center text-[9px] font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800 bg-[#f8f9fa] dark:bg-gray-900">Q3</th>
+                <th className="px-3 py-2 text-center text-[9px] font-bold text-gray-600 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800 bg-[#f8f9fa] dark:bg-gray-900">Q4</th>
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-850 divide-y divide-gray-100 dark:divide-gray-800">
@@ -825,14 +817,14 @@ export default function CommissioningStatusPage() {
                   if (!hasProjects) return null;
 
                   // Calculate group totals (Solar/Wind Total)
-                  const allGroupProjects = Object.values(projectsBySection).flat();
+                  const allGroupProjects = Object.values(projectsBySection).flat().filter(p => p.includedInTotal);
                   const groupTotal = calculateTotals(allGroupProjects);
 
                   return (
                     <React.Fragment key={`group-${groupKey}`}>
-                      {/* Major Group Header (e.g. Overall Solar) - Color Coded */}
-                      <tr className={`bg-gradient-to-r ${groupConfig.color} border-y-2 ${groupConfig.borderColor}`}>
-                        <td colSpan={21} className="px-4 py-4 text-lg font-black text-white uppercase tracking-wide shadow-sm">
+                      {/* Major Group Header - Minimal Style */}
+                      <tr className="bg-gray-50 dark:bg-gray-800 border-y border-gray-200 dark:border-gray-700">
+                        <td colSpan={24} className="px-4 py-2 text-xs font-bold text-gray-800 dark:text-white uppercase tracking-wider">
                           {groupConfig.title}
                         </td>
                       </tr>
@@ -853,7 +845,7 @@ export default function CommissioningStatusPage() {
                               className={`${groupConfig.bgLight} ${groupConfig.borderColor} border-l-4 cursor-pointer hover:brightness-95 transition-all`}
                               onClick={() => toggleSection(`${groupKey}-${section}`)}
                             >
-                              <td colSpan={21} className={`px-4 py-3 text-sm font-bold ${groupConfig.textColor}`}>
+                              <td colSpan={24} className={`px-4 py-3 text-sm font-bold ${groupConfig.textColor}`}>
                                 <div className="flex items-center justify-between w-full">
                                   <span className="flex items-center gap-3">
                                     <span className={`transition-transform duration-200 ${expandedSections[`${groupKey}-${section}`] ? 'rotate-90' : ''}`}>
@@ -896,90 +888,63 @@ export default function CommissioningStatusPage() {
                                   hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors
                                 `}
                               >
-                                <td className="sticky left-0 z-10 bg-inherit px-3 py-2.5 text-sm font-black text-gray-400 dark:text-gray-500 border-r border-gray-100 dark:border-gray-800 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
+                                <td className="sticky left-0 z-10 bg-inherit px-3 py-2 text-xs font-bold text-gray-400 dark:text-gray-500 border-r border-gray-100 dark:border-gray-800 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
                                   {project.sno}
                                 </td>
-                                <td className="sticky left-[52px] z-10 bg-inherit px-3 py-2.5 text-sm whitespace-nowrap shadow-[2px_0_5px_rgba(0,0,0,0.05)] border-r border-gray-100 dark:border-gray-700">
-                                  <div className="flex items-center gap-2 group">
-                                    <div className={`p-1.5 rounded-md shadow-sm border ${project.category.toLowerCase().includes('solar')
-                                      ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-100 dark:border-orange-800'
-                                      : 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-100 dark:border-cyan-800'
-                                      }`}>
-                                      {project.category.toLowerCase().includes('solar') ? (
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-orange-500" viewBox="0 0 20 20" fill="currentColor">
-                                          <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
-                                        </svg>
-                                      ) : (
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-cyan-500" viewBox="0 0 20 20" fill="currentColor">
-                                          <path d="M5.5 13a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 13H11V9.413l1.293 1.293a1 1 0 101.414-1.414l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 101.414 1.414L9 9.414V13H5.5z" />
-                                          <path d="M9 13h2v5a1 1 0 11-2 0v-5z" />
-                                        </svg>
-                                      )}
-                                    </div>
-                                    <span className="font-bold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{project.projectName}</span>
-                                  </div>
+                                <td className="sticky left-[52px] z-10 bg-inherit px-3 py-2 text-xs whitespace-nowrap shadow-[2px_0_5px_rgba(0,0,0,0.05)] border-r border-gray-100 dark:border-gray-700 font-bold">
+                                  {project.projectName}
                                 </td>
-                                <td className="px-3 py-2.5 text-sm text-gray-600 dark:text-gray-400">{project.spv}</td>
-                                <td className="px-3 py-2.5 text-sm">
-                                  {/* Type Badges - Enhanced */}
-                                  <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${project.projectType === 'PPA' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' :
-                                    project.projectType === 'Merchant' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300' :
-                                      'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
-                                    }`}>
-                                    {project.projectType}
-                                  </span>
+                                <td className="px-3 py-2 text-xs text-gray-600 dark:text-gray-400">{project.spv}</td>
+                                <td className="px-3 py-2 text-xs">
+                                  <span className="font-medium text-gray-500">{project.projectType}</span>
                                 </td>
-                                <td className="px-3 py-2.5 text-sm text-gray-600 dark:text-gray-400">{project.plotLocation}</td>
-                                {/* Capacity - Highlighted */}
-                                <td className="px-3 py-2.5 text-sm font-bold text-gray-900 dark:text-white">{formatNumber(project.capacity)}</td>
-                                <td className="px-3 py-2.5 text-sm">
-                                  <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${project.planActual === 'Plan' ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' :
-                                    project.planActual === 'Rephase' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' :
-                                      'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                                <td className="px-3 py-2 text-xs text-gray-600 dark:text-gray-400">{project.plotLocation}</td>
+                                <td className="px-3 py-2 text-xs font-bold text-gray-900 dark:text-white">{formatNumber(project.capacity)}</td>
+                                <td className="px-3 py-2 text-xs">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${project.planActual === 'Plan' ? 'bg-slate-100 text-slate-600' :
+                                    project.planActual === 'Rephase' ? 'bg-amber-100 text-amber-700' :
+                                      'bg-green-100 text-green-700'
                                     }`}>
-                                    {project.planActual === 'Actual' ? '✓ Actual/Fcst' : project.planActual}
+                                    {project.planActual === 'Actual' ? 'Actual/Fcst' : project.planActual}
                                   </span>
                                 </td>
                                 {monthColumns.map(m => (
-                                  <td key={m} className={`px-2 py-2.5 text-sm text-center ${!project.includedInTotal ? 'opacity-40' : ''}`}>
-                                    {formatNumber((project as any)[m])}
-                                  </td>
+                                  <EditableCell
+                                    key={m}
+                                    project={project}
+                                    field={m}
+                                    value={(project as any)[m]}
+                                    isEditing={editingCell?.projectId === project.id && editingCell?.field === m}
+                                    onEdit={() => isAdmin && setEditingCell({ projectId: project.id!, field: m })}
+                                    onSave={(val) => handleCellSave(project, m, val)}
+                                    onCancel={() => setEditingCell(null)}
+                                    formatNumber={formatNumber}
+                                    disabled={!project.includedInTotal}
+                                  />
                                 ))}
-                                <td className="px-3 py-2.5 text-sm text-center font-bold bg-gray-100 dark:bg-gray-900/70 text-gray-900 dark:text-white">{formatNumber(project.totalCapacity)}</td>
-                                <td className="px-3 py-2.5 text-sm text-center font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20">{formatNumber(project.cummTillOct)}</td>
-                                {/* Quarters - Subtle background */}
-                                <td className="px-3 py-2.5 text-sm text-center bg-gray-50 dark:bg-gray-800/50">{formatNumber(project.q1)}</td>
-                                <td className="px-3 py-2.5 text-sm text-center bg-gray-50 dark:bg-gray-800/50">{formatNumber(project.q2)}</td>
-                                <td className="px-3 py-2.5 text-sm text-center bg-gray-50 dark:bg-gray-800/50">{formatNumber(project.q3)}</td>
-                                <td className="px-3 py-2.5 text-sm text-center bg-gray-50 dark:bg-gray-800/50">{formatNumber(project.q4)}</td>
-
-                                {isAdmin && (
-                                  <td className="px-3 py-2.5 text-sm text-center">
-                                    <div className="flex gap-2 justify-center">
-                                      <button onClick={() => handleEditProject(project)} className="text-blue-600 hover:text-blue-800 font-medium">Edit</button>
-                                      <button onClick={() => handleDeleteProject(project.id!)} className="text-red-600 hover:text-red-800 font-medium">Del</button>
-                                    </div>
-                                  </td>
-                                )}
+                                <td className="px-3 py-2 text-xs text-center font-bold bg-gray-50 dark:bg-gray-900/50">{formatNumber(project.totalCapacity)}</td>
+                                <td className="px-3 py-2 text-xs text-center font-bold text-[#0B74B0] dark:text-blue-400">{formatNumber(project.cummTillOct)}</td>
+                                <td className="px-3 py-2 text-xs text-center text-gray-500">{formatNumber(project.q1)}</td>
+                                <td className="px-3 py-2 text-xs text-center text-gray-500">{formatNumber(project.q2)}</td>
+                                <td className="px-3 py-2 text-xs text-center text-gray-500">{formatNumber(project.q3)}</td>
+                                <td className="px-3 py-2 text-xs text-center text-gray-500">{formatNumber(project.q4)}</td>
                               </tr>
                             ))
                             }
 
-                            {/* SECTION SUB-TOTAL - Only show if expanded */}
+                            {/* SECTION SUB-TOTAL - Minimalist */}
                             {
                               expandedSections[`${groupKey}-${section}`] && anyIncluded && (
-                                <tr className={`${groupConfig.bgLight} border-t ${groupConfig.borderColor} font-semibold text-sm`}>
-                                  <td colSpan={5} className={`px-3 py-2 text-right ${groupConfig.textColor}`}>▸ Section {section} Subtotal:</td>
-                                  <td className="px-3 py-2 font-bold">{formatNumber(sectionTotal.capacity)}</td>
-                                  <td></td>
+                                <tr className="bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 font-bold text-[11px]">
+                                  <td colSpan={5} className="px-3 py-2 text-right text-gray-400">Section Subtotal:</td>
+                                  <td className="px-3 py-2">{formatNumber(sectionTotal.capacity)}</td>
                                   {monthColumns.map(m => <td key={m} className="px-2 py-2 text-center">{formatNumber(sectionTotal[m])}</td>)}
-                                  <td className="px-3 py-2 text-center font-bold">{formatNumber(sectionTotal.totalCapacity)}</td>
-                                  <td className="px-3 py-2 text-center text-blue-700 dark:text-blue-300 font-bold">{formatNumber(sectionTotal.cummTillOct)}</td>
-                                  <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.q1)}</td>
-                                  <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.q2)}</td>
-                                  <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.q3)}</td>
-                                  <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.q4)}</td>
-                                  {isAdmin && <td></td>}
+                                  <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.totalCapacity)}</td>
+                                  <td className="px-3 py-2 text-center text-[#0B74B0] dark:text-blue-400">{formatNumber(sectionTotal.cummTillOct)}</td>
+                                  <td className="px-3 py-2 text-center text-gray-500">{formatNumber(sectionTotal.q1)}</td>
+                                  <td className="px-3 py-2 text-center text-gray-500">{formatNumber(sectionTotal.q2)}</td>
+                                  <td className="px-3 py-2 text-center text-gray-500">{formatNumber(sectionTotal.q3)}</td>
+                                  <td className="px-3 py-2 text-center text-gray-500">{formatNumber(sectionTotal.q4)}</td>
                                 </tr>
                               )
                             }
@@ -987,21 +952,19 @@ export default function CommissioningStatusPage() {
                         );
                       })}
 
-                      {/* GROUP TOTAL (Solar/Wind) - Color coded */}
-                      <tr className={`bg-gradient-to-r ${groupConfig.color} border-t-2 ${groupConfig.borderColor} font-bold text-sm`}>
-                        <td colSpan={5} className="px-3 py-3 text-right text-white uppercase">
-                          ► Total {groupKey} (Included):
+                      {/* GROUP TOTAL - Minimalist Style */}
+                      <tr className="bg-gray-100 dark:bg-gray-900 border-t border-gray-300 dark:border-gray-700 font-bold text-xs">
+                        <td colSpan={5} className="px-3 py-2 text-right uppercase text-gray-500">
+                          Total {groupKey}:
                         </td>
-                        <td className="px-3 py-3 text-white font-black">{formatNumber(groupTotal.capacity)}</td>
-                        <td></td>
-                        {monthColumns.map(m => <td key={m} className="px-2 py-3 text-center text-white">{formatNumber(groupTotal[m])}</td>)}
-                        <td className="px-3 py-3 text-center text-white font-black">{formatNumber(groupTotal.totalCapacity)}</td>
-                        <td className="px-3 py-3 text-center text-yellow-200 font-black">{formatNumber(groupTotal.cummTillOct)}</td>
-                        <td className="px-3 py-3 text-center text-white">{formatNumber(groupTotal.q1)}</td>
-                        <td className="px-3 py-3 text-center text-white">{formatNumber(groupTotal.q2)}</td>
-                        <td className="px-3 py-3 text-center text-white">{formatNumber(groupTotal.q3)}</td>
-                        <td className="px-3 py-3 text-center text-white">{formatNumber(groupTotal.q4)}</td>
-                        {isAdmin && <td></td>}
+                        <td className="px-3 py-2 font-bold">{formatNumber(groupTotal.capacity)}</td>
+                        {monthColumns.map(m => <td key={m} className="px-2 py-2 text-center">{formatNumber(groupTotal[m])}</td>)}
+                        <td className="px-3 py-2 text-center font-bold">{formatNumber(groupTotal.totalCapacity)}</td>
+                        <td className="px-3 py-2 text-center text-[#0B74B0] dark:text-blue-400 font-bold">{formatNumber(groupTotal.cummTillOct)}</td>
+                        <td className="px-3 py-2 text-center">{formatNumber(groupTotal.q1)}</td>
+                        <td className="px-3 py-2 text-center">{formatNumber(groupTotal.q2)}</td>
+                        <td className="px-3 py-2 text-center">{formatNumber(groupTotal.q3)}</td>
+                        <td className="px-3 py-2 text-center">{formatNumber(groupTotal.q4)}</td>
                       </tr>
                     </React.Fragment>
                   );
@@ -1013,23 +976,18 @@ export default function CommissioningStatusPage() {
                 (() => {
                   const grandTotal = calculateTotals(tabProjects.filter((p: { includedInTotal: any; }) => p.includedInTotal));
                   return (
-                    <tr className="sticky bottom-0 z-40 bg-gray-900 dark:bg-black text-white border-t-2 border-indigo-500 font-bold text-base shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.3)]">
-                      <td colSpan={5} className="px-3 py-4 text-right uppercase tracking-widest bg-gray-900 dark:bg-black">
-                        <div className="flex items-center justify-end gap-2">
-                          <span className="text-indigo-400 text-xl">◆</span>
-                          AGEL Overall FY 2025–26 Total:
-                        </div>
+                    <tr className="sticky bottom-0 z-40 bg-gray-900 text-white font-bold text-xs">
+                      <td colSpan={5} className="px-3 py-3 text-right uppercase tracking-wider">
+                        AGEL Overall Total:
                       </td>
-                      <td className="px-3 py-4 font-black text-lg bg-gray-900 dark:bg-black">{formatNumber(grandTotal.capacity)}</td>
-                      <td className="bg-gray-900 dark:bg-black"></td>
-                      {monthColumns.map(m => <td key={m} className="px-2 py-4 text-center bg-gray-900 dark:bg-black">{formatNumber(grandTotal[m])}</td>)}
-                      <td className="px-3 py-4 text-center font-black text-lg text-green-400 shadow-inner bg-gray-800/50">{formatNumber(grandTotal.totalCapacity)}</td>
-                      <td className="px-3 py-4 text-center font-black text-lg text-yellow-300 shadow-inner bg-gray-800/50">{formatNumber(grandTotal.cummTillOct)}</td>
-                      <td className="px-3 py-4 text-center bg-gray-900 dark:bg-black">{formatNumber(grandTotal.q1)}</td>
-                      <td className="px-3 py-4 text-center bg-gray-900 dark:bg-black">{formatNumber(grandTotal.q2)}</td>
-                      <td className="px-3 py-4 text-center bg-gray-900 dark:bg-black">{formatNumber(grandTotal.q3)}</td>
-                      <td className="px-3 py-4 text-center bg-gray-900 dark:bg-black">{formatNumber(grandTotal.q4)}</td>
-                      {isAdmin && <td className="bg-gray-900 dark:bg-black"></td>}
+                      <td className="px-3 py-3 font-bold">{formatNumber(grandTotal.capacity)}</td>
+                      {monthColumns.map(m => <td key={m} className="px-2 py-3 text-center">{formatNumber(grandTotal[m])}</td>)}
+                      <td className="px-3 py-3 text-center font-bold">{formatNumber(grandTotal.totalCapacity)}</td>
+                      <td className="px-3 py-3 text-center text-blue-400 font-bold">{formatNumber(grandTotal.cummTillOct)}</td>
+                      <td className="px-3 py-3 text-center text-gray-400">{formatNumber(grandTotal.q1)}</td>
+                      <td className="px-3 py-3 text-center text-gray-400">{formatNumber(grandTotal.q2)}</td>
+                      <td colSpan={1} className="px-3 py-3 text-center text-gray-400">{formatNumber(grandTotal.q3)}</td>
+                      <td className="px-3 py-3 text-center text-gray-400">{formatNumber(grandTotal.q4)}</td>
                     </tr>
                   );
                 })()
@@ -1039,93 +997,7 @@ export default function CommissioningStatusPage() {
         </div>
       </div>
 
-      {/* Edit Modal */}
-      {
-        editingProject && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-              <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Edit Project</h3>
-                <button onClick={() => setEditingProject(null)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              <div className="p-4 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Project Name</label>
-                    <input
-                      type="text"
-                      value={editingProject?.projectName || ''}
-                      onChange={(e) => setEditingProject(prev => prev ? { ...prev, projectName: e.target.value } : null)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">SPV</label>
-                    <input
-                      type="text"
-                      value={editingProject?.spv || ''}
-                      onChange={(e) => setEditingProject(prev => prev ? { ...prev, spv: e.target.value } : null)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type</label>
-                    <select
-                      value={editingProject?.projectType || 'PPA'}
-                      onChange={(e) => setEditingProject(prev => prev ? { ...prev, projectType: e.target.value } : null)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    >
-                      <option value="PPA">PPA</option>
-                      <option value="Merchant">Merchant</option>
-                      <option value="Group">Group</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Capacity (MW)</label>
-                    <input
-                      type="number"
-                      value={editingProject?.capacity || 0}
-                      onChange={(e) => setEditingProject(prev => prev ? { ...prev, capacity: parseFloat(e.target.value) || 0 } : null)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-4 gap-2">
-                  {monthColumns.map((month, idx) => (
-                    <div key={month}>
-                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{monthLabels[idx]}</label>
-                      <input
-                        type="number"
-                        value={(editingProject as any)?.[month] || ''}
-                        onChange={(e) => setEditingProject(prev => prev ? { ...prev, [month]: parseFloat(e.target.value) || null } : null)}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
-                <button
-                  onClick={() => setEditingProject(null)}
-                  className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white border border-gray-300 dark:border-gray-600 rounded-lg"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveEdit}
-                  className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
-                >
-                  Save Changes
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-      }
+      {/* Modal removed in favor of inline editing */}
 
       {/* Upload Excel Modal */}
       {
@@ -1135,69 +1007,124 @@ export default function CommissioningStatusPage() {
               <div className="p-6 border-b border-gray-200 dark:border-gray-700">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Upload Commissioning Excel</h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  Excel must follow the approved AGEL commissioning template.
+                  Supports consolidated Excel (.xlsx) or Summary CSV files.
                 </p>
               </div>
 
               <div className="p-6 space-y-4">
-                {!uploadResult ? (
+                {uploading ? (
+                  <div className="py-12 flex flex-col items-center justify-center space-y-4">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 animate-pulse">
+                      Processing your file, please wait...
+                    </p>
+                  </div>
+                ) : !uploadResult ? (
                   <>
-                    <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-blue-500 transition-colors cursor-pointer">
+                    <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-all cursor-pointer group">
                       <input
                         type="file"
-                        accept=".xlsx"
+                        accept=".xlsx,.csv"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file) {
-                            if (!file.name.endsWith('.xlsx')) {
-                              alert('Only .xlsx files are accepted');
+                            const ext = file.name.split('.').pop()?.toLowerCase();
+                            if (ext !== 'xlsx' && ext !== 'csv') {
+                              alert('Only .xlsx and .csv files are accepted');
                               return;
                             }
                             handleExcelUpload(file);
                           }
                         }}
-                        disabled={uploading}
                         className="hidden"
                         id="excel-upload"
                       />
                       <label htmlFor="excel-upload" className="cursor-pointer block">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mx-auto text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-                        </svg>
-                        <p className="text-sm font-medium text-gray-900 dark:text-white">
-                          {uploading ? 'Uploading...' : 'Click to upload or drag and drop'}
+                        <div className="bg-blue-100 dark:bg-blue-900/30 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                          </svg>
+                        </div>
+                        <p className="text-base font-semibold text-gray-900 dark:text-white mb-1">
+                          Click to upload or drag and drop
                         </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">(.xlsx files only)</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Supports .xlsx workbooks and .csv files
+                        </p>
                       </label>
                     </div>
 
-                    <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-xs text-gray-700 dark:text-gray-300">
-                      <strong>Expected columns:</strong> Category, Section, Project Name, SPV, Type, Capacity Type, Apr-25, May-25, ... Mar-26
+                    <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg flex items-start space-x-3">
+                      <svg className="h-5 w-5 text-blue-500 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className="text-xs text-blue-700 dark:text-blue-300 leading-relaxed">
+                        <strong>Pro Tip:</strong> You can upload the consolidated Excel file to update all data at once, or just the Summary CSV for project updates.
+                      </p>
                     </div>
                   </>
                 ) : (
-                  <div className="space-y-3">
-                    {uploadResult.success ? (
-                      <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
-                        <p className="text-sm font-medium text-green-800 dark:text-green-400">
-                          ✓ Successfully updated {uploadResult.success} row(s)
-                        </p>
+                  <div className="space-y-4">
+                    {/* Results Heading */}
+                    <div className={uploadResult.success !== undefined && uploadResult.success > 0 ? "bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-100 dark:border-green-800" : "bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg border border-orange-100 dark:border-orange-800"}>
+                      <div className="flex items-center space-x-3">
+                        <div className={`p-2 rounded-full ${uploadResult.success !== undefined && uploadResult.success > 0 ? "bg-green-100 dark:bg-green-800" : "bg-orange-100 dark:bg-orange-800"}`}>
+                          {uploadResult.success !== undefined && uploadResult.success > 0 ? (
+                            <svg className="h-5 w-5 text-green-600 dark:text-green-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          ) : (
+                            <svg className="h-5 w-5 text-orange-600 dark:text-orange-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                          )}
+                        </div>
+                        <div>
+                          <p className={`text-sm font-bold ${uploadResult.success !== undefined && uploadResult.success > 0 ? "text-green-800 dark:text-green-400" : "text-orange-800 dark:text-orange-400"}`}>
+                            {uploadResult.success !== undefined && uploadResult.success > 0
+                              ? `Import Successful`
+                              : `No data imported`}
+                          </p>
+                          <p className="text-xs text-gray-600 dark:text-gray-400">
+                            {uploadResult.success || 0} projects identified
+                          </p>
+                        </div>
                       </div>
-                    ) : null}
+                    </div>
 
-                    {uploadResult && uploadResult.failed != null && uploadResult.failed > 0 && (
-                      <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg">
-                        <p className="text-sm font-medium text-orange-800 dark:text-orange-400">
-                          ⚠ {uploadResult.failed} row(s) failed
-                        </p>
-                        {uploadResult.errors && uploadResult.errors.length > 0 && (
-                          <ul className="text-xs text-orange-700 dark:text-orange-300 mt-2 space-y-1">
-                            {uploadResult.errors.slice(0, 5).map((err, idx) => (
-                              <li key={idx}>• {err}</li>
+                    {/* Stats */}
+                    {uploadResult.sheets_found && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-100 dark:border-gray-700 text-center">
+                          <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 mb-1">Files/Tabs</p>
+                          <p className="text-lg font-bold text-gray-900 dark:text-white">{uploadResult.sheet_count || 0}</p>
+                        </div>
+                        <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-100 dark:border-gray-700 text-center">
+                          <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 mb-1">Summaries</p>
+                          <p className="text-lg font-bold text-gray-900 dark:text-white">{(uploadResult as any).summaries_imported || 0}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Errors if any */}
+                    {uploadResult.errors && uploadResult.errors.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Issues Encountered:</p>
+                        <div className="bg-red-50 dark:bg-red-900/10 p-3 rounded-lg border border-red-100 dark:border-red-900/30">
+                          <ul className="text-[11px] text-red-700 dark:text-red-400 space-y-1">
+                            {uploadResult.errors.slice(0, 3).map((err, idx) => (
+                              <li key={idx} className="flex items-start">
+                                <span className="mr-2">•</span>
+                                <span>{err}</span>
+                              </li>
                             ))}
-                            {uploadResult.errors.length > 5 && <li>• ... and {uploadResult.errors.length - 5} more</li>}
+                            {uploadResult.errors.length > 3 && (
+                              <li className="font-medium text-[10px] mt-1 italic">
+                                + {uploadResult.errors.length - 3} more technical issues...
+                              </li>
+                            )}
                           </ul>
-                        )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1225,7 +1152,76 @@ export default function CommissioningStatusPage() {
   );
 }
 
+// Inline Editable Cell Component
+interface EditableCellProps {
+  project: CommissioningProject;
+  field: string;
+  value: number | null;
+  isEditing: boolean;
+  onEdit: () => void;
+  onSave: (value: number | null) => void;
+  onCancel: () => void;
+  formatNumber: (value: number | null) => string;
+  disabled: boolean;
+}
+
+function EditableCell({ value, isEditing, onEdit, onSave, onCancel, formatNumber, disabled }: EditableCellProps) {
+  const [tempValue, setTempValue] = useState(value?.toString() || '');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditing) {
+      setTempValue(value === null || value === undefined ? '' : value.toString());
+      setTimeout(() => inputRef.current?.focus(), 10);
+    }
+  }, [isEditing, value]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      const num = tempValue === '' ? null : parseFloat(tempValue);
+      onSave(num);
+    } else if (e.key === 'Escape') {
+      onCancel();
+    }
+  };
+
+  const handleBlur = () => {
+    const num = tempValue === '' ? null : parseFloat(tempValue);
+    if (num !== value) {
+      onSave(num);
+    } else {
+      onCancel();
+    }
+  };
+
+  if (isEditing) {
+    return (
+      <td className="px-1 py-1 border border-blue-500 shadow-inner bg-white">
+        <input
+          ref={inputRef}
+          type="number"
+          value={tempValue}
+          onChange={(e) => setTempValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={handleBlur}
+          className="w-full h-full text-center text-xs outline-none font-bold"
+        />
+      </td>
+    );
+  }
+
+  return (
+    <td
+      onClick={onEdit}
+      className={`px-2 py-2 text-xs text-center border-r border-gray-100 dark:border-gray-800 transition-colors cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 ${disabled ? 'opacity-30' : 'text-gray-700 dark:text-gray-300 font-medium'}`}
+    >
+      {formatNumber(value)}
+    </td>
+  );
+}
+
 // Summary Table Component - Matches PDF format
+// (Rest of SummaryTable follows but updated for style)
 interface SummaryTableProps {
   title: string;
   projects: CommissioningProject[];
@@ -1268,7 +1264,6 @@ function SummaryTable({ title, projects, monthColumns, monthLabels, formatNumber
       };
     });
 
-    // Calculate total for this planActual
     const total = {
       apr: filtered.reduce((s, p) => s + (p.apr || 0), 0),
       may: filtered.reduce((s, p) => s + (p.may || 0), 0),
@@ -1299,51 +1294,46 @@ function SummaryTable({ title, projects, monthColumns, monthLabels, formatNumber
 
   const renderRow = (label: string, data: any, bgClass: string = '') => (
     <tr className={bgClass}>
-      <td className="px-2 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">{label}</td>
+      <td className="px-2 py-1 text-[10px] font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">{label}</td>
       {monthColumns.map(m => (
-        <td key={m} className="px-1 py-1 text-xs text-center text-gray-600 dark:text-gray-400">{formatNumber(data[m])}</td>
+        <td key={m} className="px-1 py-1 text-[10px] text-center text-gray-600 dark:text-gray-400">{formatNumber(data[m])}</td>
       ))}
-      <td className="px-1 py-1 text-xs text-center font-semibold text-gray-800 dark:text-gray-200">{formatNumber(data.totalCapacity)}</td>
-      <td className="px-1 py-1 text-xs text-center text-blue-600 dark:text-blue-400">{formatNumber(data.cummTillOct)}</td>
-      <td className="px-1 py-1 text-xs text-center text-gray-600 dark:text-gray-400">{formatNumber(data.q1)}</td>
-      <td className="px-1 py-1 text-xs text-center text-gray-600 dark:text-gray-400">{formatNumber(data.q2)}</td>
-      <td className="px-1 py-1 text-xs text-center text-gray-600 dark:text-gray-400">{formatNumber(data.q3)}</td>
-      <td className="px-1 py-1 text-xs text-center text-gray-600 dark:text-gray-400">{formatNumber(data.q4)}</td>
+      <td className="px-1 py-1 text-[10px] text-center font-bold text-gray-900 dark:text-white">{formatNumber(data.totalCapacity)}</td>
+      <td className="px-1 py-1 text-[10px] text-center font-bold text-[#0B74B0] dark:text-blue-400">{formatNumber(data.cummTillOct)}</td>
+      <td className="px-1 py-1 text-[10px] text-center text-gray-500">{formatNumber(data.q1)}</td>
+      <td className="px-1 py-1 text-[10px] text-center text-gray-500">{formatNumber(data.q2)}</td>
+      <td className="px-1 py-1 text-[10px] text-center text-gray-500">{formatNumber(data.q3)}</td>
+      <td className="px-1 py-1 text-[10px] text-center text-gray-500">{formatNumber(data.q4)}</td>
     </tr>
   );
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-      <div className="bg-purple-600 dark:bg-purple-800 px-4 py-2">
-        <h3 className="text-sm font-bold text-white">{title}</h3>
+    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
+      <div className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-2">
+        <h3 className="text-xs font-bold text-gray-700 dark:text-gray-200 uppercase tracking-widest">{title}</h3>
       </div>
       <div className="overflow-x-auto">
-        <table className="min-w-full text-xs">
-          <thead className="bg-purple-100 dark:bg-purple-900/50">
+        <table className="min-w-full text-[10px]">
+          <thead className="bg-[#f8f9fa] dark:bg-gray-900">
             <tr>
-              <th className="px-2 py-2 text-left text-xs font-semibold text-purple-800 dark:text-purple-200">Plan / Actual</th>
+              <th className="px-2 py-2 text-left text-[9px] font-bold text-gray-500 uppercase">Plan / Actual</th>
               {monthLabels.map((m, idx) => (
-                <th key={idx} className="px-1 py-2 text-center text-xs font-semibold text-purple-800 dark:text-purple-200">{m}</th>
+                <th key={idx} className="px-1 py-2 text-center text-[9px] font-bold text-gray-500 uppercase">{m}</th>
               ))}
-              <th className="px-1 py-2 text-center text-xs font-semibold text-purple-800 dark:text-purple-200">Total Capacity</th>
-              <th className="px-1 py-2 text-center text-xs font-semibold text-purple-800 dark:text-purple-200">Cumm till 31-Oct-25</th>
-              <th className="px-1 py-2 text-center text-xs font-semibold text-purple-800 dark:text-purple-200">Q1</th>
-              <th className="px-1 py-2 text-center text-xs font-semibold text-purple-800 dark:text-purple-200">Q2</th>
-              <th className="px-1 py-2 text-center text-xs font-semibold text-purple-800 dark:text-purple-200">Q3</th>
-              <th className="px-1 py-2 text-center text-xs font-semibold text-purple-800 dark:text-purple-200">Q4</th>
+              <th className="px-1 py-2 text-center text-[9px] font-bold text-gray-500 uppercase">Total</th>
+              <th className="px-1 py-2 text-center text-[9px] font-bold text-[#0B74B0] uppercase">Cumm Oct</th>
+              <th className="px-1 py-2 text-center text-[9px] font-bold text-gray-500 uppercase">Q1</th>
+              <th className="px-1 py-2 text-center text-[9px] font-bold text-gray-500 uppercase">Q2</th>
+              <th className="px-1 py-2 text-center text-[9px] font-bold text-gray-500 uppercase">Q3</th>
+              <th className="px-1 py-2 text-center text-[9px] font-bold text-gray-500 uppercase">Q4</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-            {/* Plan Section */}
-            {renderRow('Plan', planData.total, 'bg-gray-50 dark:bg-gray-700/30 font-semibold')}
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+            {renderRow('Plan', planData.total, 'bg-gray-50/50 dark:bg-gray-800/50 font-bold')}
             {Object.entries(planData.byType).map(([type, data]) => renderRow(type, data))}
-
-            {/* Rephase Section */}
-            {renderRow('Rephase', rephaseData.total, 'bg-amber-50 dark:bg-amber-900/20 font-semibold')}
+            {renderRow('Rephase', rephaseData.total, 'bg-amber-50/30 dark:bg-amber-900/10 font-bold')}
             {Object.entries(rephaseData.byType).map(([type, data]) => renderRow(type, data))}
-
-            {/* Actual Section */}
-            {renderRow('Actual / Fcst', actualData.total, 'bg-green-50 dark:bg-green-900/20 font-semibold')}
+            {renderRow('Actual', actualData.total, 'bg-green-50/30 dark:bg-green-900/10 font-bold')}
             {Object.entries(actualData.byType).map(([type, data]) => renderRow(type, data))}
           </tbody>
         </table>
