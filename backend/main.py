@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, Query, Body, Depends, Request, status, File, UploadFile, Form
+﻿from fastapi import FastAPI, HTTPException, Query, Body, Depends, Request, status, File, UploadFile, Form
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 import pandas as pd
@@ -15,6 +16,11 @@ import subprocess
 import sys
 import bcrypt
 import jwt
+import openai
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from database import get_db_connection, init_db
 from schemas import (
     UserRegister, UserLogin, UserResponse, LoginResponse,
@@ -27,6 +33,75 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 app = FastAPI()
+
+# Explicitly define ChatRequest (needed for chat endpoint)
+class ChatRequest(BaseModel):
+    message: str
+    context: Optional[Dict[str, Any]] = None
+
+@app.get("/api/chat-test")
+def chat_test():
+    return {"message": "Chat routing works", "model": "ChatRequest defined"}
+
+# Main Chat Endpoint moved to top to avoid scope/registration issues
+@app.post("/api/chat")
+async def api_chat_endpoint_top(request: ChatRequest):
+    try:
+        hf_token = os.environ.get("HF_TOKEN")
+        if not hf_token:
+             raise HTTPException(status_code=500, detail="Hugging Face Token not configured")
+
+        from huggingface_hub import InferenceClient
+        
+        # Reverting to Mistral as Claude-Instant-2-HF does not exist on HF Hub
+        repo_id = "mistralai/Mistral-7B-Instruct-v0.2" 
+        
+        client = InferenceClient(model=repo_id, token=hf_token)
+
+        # 1. Parse Context
+        context = request.context or {}
+        summary_data = context.get('summary')
+        projects_data = context.get('projects')
+        
+        # 2. Construct System Prompt
+        system_instructions = """You are the AGEL AI Analyst, an intelligent assistant for Adani Green Energy Ltd. 
+        You have direct access to the latest commissioning database.
+
+        INSTRUCTIONS:
+        - Answer the user's question based strictly on the provided data context if applicable.
+        - If the user asks about specific numbers (like 'total solar capacity'), use the data above.
+        - Be professional, concise, and business-oriented.
+        - If data is missing for a specific query, politely say you don't have that specific detail in the summary view.
+        """
+        
+        # Format context for prompt
+        data_context = ""
+        if summary_data:
+            data_context += f"\n[Overall Performance Summary]:\n{json.dumps(summary_data, indent=2)}"
+        if projects_data:
+            data_context += f"\n\n[Top 10 Major Projects]:\n{json.dumps(projects_data, indent=2)}"
+
+        # Construct Messages for Chat Completion
+        messages = [
+            {"role": "system", "content": system_instructions + f"\n\nCONTEXT:\n{data_context}"},
+            {"role": "user", "content": request.message}
+        ]
+
+        # Generate response using chat_completion
+        response = client.chat_completion(
+            messages=messages, 
+            max_tokens=500, 
+            temperature=0.7
+        )
+
+        return {"response": response.choices[0].message.content}
+
+    except Exception as e:
+        print(f"Chat Error: {str(e)}")
+        # Check for authentication errors specifically
+        if "401" in str(e):
+             raise HTTPException(status_code=401, detail="Invalid Hugging Face Token")
+        raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
 
 # Configure CORS
 app.add_middleware(
@@ -55,6 +130,10 @@ def health_check():
 @app.get("/api/health")
 def api_health_check():
     return health_check()
+
+@app.get("/")
+def read_root():
+    return {"message": "Backend is running", "ports": "8002"}
 
 # --- Authentication Endpoints ---
 
@@ -1636,3 +1715,86 @@ def get_upload_status(fiscalYear: str = Query("FY_25-26")):
     finally:
         conn.close()
 
+# --- Chatbot Endpoint ---
+
+class ChatRequest(BaseModel):
+    message: str
+    context: Optional[Dict[str, Any]] = None
+
+@app.post("/chat")
+async def chat_endpoint(request: ChatRequest):
+    try:
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="OpenAI API Key not configured")
+
+        client = openai.OpenAI(api_key=api_key)
+
+        # 1. Fetch relevant data from DB to give "Real Answers"
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get latest fiscal year summary
+        cursor.execute("SELECT * FROM commissioning_summaries ORDER BY fiscal_year DESC LIMIT 1")
+        summary_row = cursor.fetchone()
+        summary_data = dict(summary_row) if summary_row else {}
+
+        # Get a sample of projects (e.g. top 10 by capacity)
+        cursor.execute("SELECT * FROM commissioning_projects ORDER BY CAST(capacity AS FLOAT) DESC LIMIT 10")
+        project_rows = cursor.fetchall()
+        projects_data = [dict(row) for row in project_rows]
+        
+        conn.close()
+
+        # 2. Construct System Prompt
+        system_prompt = """You are the AGEL AI Analyst, an intelligent assistant for Adani Green Energy Ltd. 
+        You have direct access to the latest commissioning database.
+        
+        CURRENT DATA CONTEXT:
+        """
+        
+        if summary_data:
+            system_prompt += f"\n[Overall Performance Summary]:\n{json.dumps(summary_data, indent=2)}"
+        
+        if projects_data:
+            system_prompt += f"\n\n[Top 10 Major Projects]:\n{json.dumps(projects_data, indent=2)}"
+            
+        system_prompt += """
+        
+        INSTRUCTIONS:
+        - Answer the user's question based strictly on the provided data context if applicable.
+        - If the user asks about specific numbers (like 'total solar capacity'), use the data above.
+        - Be professional, concise, and business-oriented.
+        - If data is missing for a specific query, politely say you don't have that specific detail in the summary view.
+        """
+
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo", 
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": request.message}
+            ],
+            temperature=0.7,
+        )
+
+        return {"response": response.choices[0].message.content}
+
+    except Exception as e:
+        print(f"Chat Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
+
+# Additional route with /api prefix for direct access
+@app.post("/api/chat")
+async def api_chat_endpoint(request: ChatRequest):
+    return await chat_endpoint(request)
+
+# Debug route to verify server update
+@app.get("/debug-ping")
+def debug_ping():
+    return {"message": "pong"}
+
+if __name__ == "__main__":
+    import uvicorn
+    print("STARTING SERVER ON PORT 8002...")
+    uvicorn.run(app, host="0.0.0.0", port=8002)

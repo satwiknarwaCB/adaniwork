@@ -3,11 +3,41 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+import { API_BASE_URL } from '@/lib/config';
+import { useQuery } from '@tanstack/react-query';
+
+interface CommissioningProject {
+    id?: number;
+    sno: number;
+    projectName: string;
+    spv: string;
+    projectType: string;
+    plotLocation: string;
+    capacity: number;
+    planActual: string;
+    totalCapacity: number | null;
+    category: string;
+    section: string;
+    includedInTotal: boolean;
+}
+
 export default function ChatbotPanel() {
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState([
         { role: 'assistant', content: 'Hello! I am your AGEL AI Analyst. How can I help you extract insights from the FY 25-26 commissioning data today?' }
     ]);
+
+    // Fetch Data for Context
+    const fiscalYear = 'FY_25-26';
+    const { data: allProjects = [] } = useQuery<CommissioningProject[]>({
+        queryKey: ['commissioningProjects', fiscalYear],
+        queryFn: async () => {
+            const response = await fetch(`/api/commissioning-projects?fiscalYear=${fiscalYear}`);
+            if (!response.ok) throw new Error('Failed to fetch projects');
+            return response.json();
+        },
+        staleTime: 1000 * 60 * 5 // 5 minutes
+    });
 
     const suggestions = [
         "What is the total solar capacity achieved?",
@@ -16,8 +46,90 @@ export default function ChatbotPanel() {
         "Summarize Wind performance."
     ];
 
+    const [inputValue, setInputValue] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const messagesEndRef = React.useRef<null | HTMLDivElement>(null);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    React.useEffect(() => {
+        scrollToBottom();
+    }, [messages]);
+
+    const handleSendMessage = async (text: string) => {
+        if (!text.trim()) return;
+
+        // Add user message
+        const userMsg = { role: 'user', content: text };
+        setMessages(prev => [...prev, userMsg]);
+        setInputValue('');
+        setIsLoading(true);
+
+        // Prepare Context
+        const validProjects = allProjects.filter(p => p.includedInTotal);
+
+        const summary = {
+            totalPlan: validProjects.filter(p => p.planActual === 'Plan').reduce((s, p) => s + (p.capacity || 0), 0),
+            totalActual: validProjects.filter(p => p.planActual === 'Actual').reduce((s, p) => s + (p.totalCapacity || 0), 0),
+            projectCount: new Set(validProjects.map(p => p.projectName)).size
+        };
+
+        const simplifiedProjects = validProjects
+            .filter(p => p.planActual === 'Plan')
+            .map(p => {
+                const actual = validProjects.find(ap => ap.projectName === p.projectName && ap.planActual === 'Actual');
+                return {
+                    name: p.projectName,
+                    category: p.category,
+                    location: p.section,
+                    capacity: p.capacity,
+                    actual: actual?.totalCapacity || 0,
+                    diff: (actual?.totalCapacity || 0) - p.capacity,
+                    status: (actual?.totalCapacity || 0) >= p.capacity ? 'Completed' : 'On-Going'
+                };
+            });
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: text,
+                    context: {
+                        summary: summary,
+                        projects: simplifiedProjects
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || `Server error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
+        } catch (error: any) {
+            console.error("Chat Error:", error);
+            setMessages(prev => [...prev, {
+                role: 'assistant',
+                content: `Error: ${error.message || "Could not connect to the backend brain"}. Please ensure the backend server is running on port 8002.`
+            }]);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            handleSendMessage(inputValue);
+        }
+    };
+
     return (
-        <div className="fixed bottom-8 right-8 z-50">
+        <div className="fixed bottom-8 right-8 z-[10000]">
             <AnimatePresence>
                 {isOpen && (
                     <motion.div
@@ -49,7 +161,7 @@ export default function ChatbotPanel() {
                                 </div>
                                 <div>
                                     <h4 className="text-white font-black leading-none">AGEL AI Analyst</h4>
-                                    <p className="text-blue-100 text-[10px] font-bold uppercase tracking-widest mt-1">Real-time Insights</p>
+                                    <p className="text-blue-100 text-[10px] font-bold uppercase tracking-widest mt-1">Real-time Insights (Mistral)</p>
                                 </div>
                             </div>
                             <button onClick={() => setIsOpen(false)} className="text-white/60 hover:text-white transition-colors">
@@ -63,7 +175,7 @@ export default function ChatbotPanel() {
                         <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
                             {messages.map((m, i) => (
                                 <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`max-w-[80%] p-4 rounded-3xl text-sm font-medium ${m.role === 'user'
+                                    <div className={`max-w-[85%] p-4 rounded-3xl text-sm font-medium break-words shadow-sm ${m.role === 'user'
                                         ? 'bg-blue-600 text-white rounded-br-none'
                                         : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-bl-none'
                                         }`}>
@@ -71,12 +183,26 @@ export default function ChatbotPanel() {
                                     </div>
                                 </div>
                             ))}
+                            {isLoading && (
+                                <div className="flex justify-start">
+                                    <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-3xl rounded-bl-none flex gap-2">
+                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                                    </div>
+                                </div>
+                            )}
+                            <div ref={messagesEndRef} />
                         </div>
 
                         {/* Suggested Pills */}
                         <div className="px-6 pb-2 flex flex-wrap gap-2">
                             {suggestions.map(s => (
-                                <button key={s} className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-[10px] font-bold text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700 rounded-full transition-all">
+                                <button
+                                    key={s}
+                                    onClick={() => handleSendMessage(s)}
+                                    className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-[10px] font-bold text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700 rounded-full transition-all"
+                                >
                                     {s}
                                 </button>
                             ))}
@@ -87,10 +213,17 @@ export default function ChatbotPanel() {
                             <div className="relative">
                                 <input
                                     type="text"
+                                    value={inputValue}
+                                    onChange={(e) => setInputValue(e.target.value)}
+                                    onKeyDown={handleKeyDown}
                                     placeholder="Ask for an insight..."
                                     className="w-full bg-gray-50 dark:bg-gray-800 border-none rounded-2xl py-4 pl-6 pr-14 text-sm font-medium focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
                                 />
-                                <button className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all">
+                                <button
+                                    onClick={() => handleSendMessage(inputValue)}
+                                    disabled={isLoading || !inputValue.trim()}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
                                     </svg>

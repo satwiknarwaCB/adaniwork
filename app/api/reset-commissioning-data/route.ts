@@ -3,10 +3,10 @@ import { NextResponse } from 'next/server';
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8002';
+        const FASTAPI_URL = process.env.API_BASE_URL || 'http://localhost:8002';
 
         // Call FastAPI backend
-        const response = await fetch(`${API_BASE_URL}/api/reset-commissioning-data`, {
+        const response = await fetch(`${FASTAPI_URL}/api/reset-commissioning-data`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

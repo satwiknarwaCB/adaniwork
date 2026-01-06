@@ -6,3 +6,4 @@ bcrypt
 PyJWT
 openai
 pandas
+python-dotenv
