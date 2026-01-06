@@ -16,7 +16,7 @@ import subprocess
 import sys
 import bcrypt
 import jwt
-import openai
+# import openai - REMOVED FOR DATA SENSITIVITY
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -24,7 +24,8 @@ load_dotenv()
 from database import get_db_connection, init_db
 from schemas import (
     UserRegister, UserLogin, UserResponse, LoginResponse,
-    CommissioningProject, CommissioningSummary, CommissioningDataRequest
+    CommissioningProject, CommissioningSummary, CommissioningDataRequest,
+    DropdownOptionsModel, ManualProjectRequest
 )
 
 # JWT configuration
@@ -34,74 +35,9 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 app = FastAPI()
 
-# Explicitly define ChatRequest (needed for chat endpoint)
 class ChatRequest(BaseModel):
     message: str
     context: Optional[Dict[str, Any]] = None
-
-@app.get("/api/chat-test")
-def chat_test():
-    return {"message": "Chat routing works", "model": "ChatRequest defined"}
-
-# Main Chat Endpoint moved to top to avoid scope/registration issues
-@app.post("/api/chat")
-async def api_chat_endpoint_top(request: ChatRequest):
-    try:
-        hf_token = os.environ.get("HF_TOKEN")
-        if not hf_token:
-             raise HTTPException(status_code=500, detail="Hugging Face Token not configured")
-
-        from huggingface_hub import InferenceClient
-        
-        # Reverting to Mistral as Claude-Instant-2-HF does not exist on HF Hub
-        repo_id = "mistralai/Mistral-7B-Instruct-v0.2" 
-        
-        client = InferenceClient(model=repo_id, token=hf_token)
-
-        # 1. Parse Context
-        context = request.context or {}
-        summary_data = context.get('summary')
-        projects_data = context.get('projects')
-        
-        # 2. Construct System Prompt
-        system_instructions = """You are the AGEL AI Analyst, an intelligent assistant for Adani Green Energy Ltd. 
-        You have direct access to the latest commissioning database.
-
-        INSTRUCTIONS:
-        - Answer the user's question based strictly on the provided data context if applicable.
-        - If the user asks about specific numbers (like 'total solar capacity'), use the data above.
-        - Be professional, concise, and business-oriented.
-        - If data is missing for a specific query, politely say you don't have that specific detail in the summary view.
-        """
-        
-        # Format context for prompt
-        data_context = ""
-        if summary_data:
-            data_context += f"\n[Overall Performance Summary]:\n{json.dumps(summary_data, indent=2)}"
-        if projects_data:
-            data_context += f"\n\n[Top 10 Major Projects]:\n{json.dumps(projects_data, indent=2)}"
-
-        # Construct Messages for Chat Completion
-        messages = [
-            {"role": "system", "content": system_instructions + f"\n\nCONTEXT:\n{data_context}"},
-            {"role": "user", "content": request.message}
-        ]
-
-        # Generate response using chat_completion
-        response = client.chat_completion(
-            messages=messages, 
-            max_tokens=500, 
-            temperature=0.7
-        )
-
-        return {"response": response.choices[0].message.content}
-
-    except Exception as e:
-        print(f"Chat Error: {str(e)}")
-        # Check for authentication errors specifically
-        if "401" in str(e):
-             raise HTTPException(status_code=401, detail="Invalid Hugging Face Token")
-        raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
 
 # Configure CORS
 app.add_middleware(
@@ -1200,7 +1136,7 @@ def get_commissioning_projects(fiscalYear: str = Query("FY_25-26")):
             else:  # ACTUAL / Fcst
                 total_capacity = monthly_sum
             
-            # Calculate cummTillOct from Apr-Oct
+            # Calculate cummTillNov from Apr-Nov (Updated per latest image as of 31-Dec-25)
             cumm_till_oct = sum([
                 row_dict.get('apr') or 0,
                 row_dict.get('may') or 0,
@@ -1208,7 +1144,8 @@ def get_commissioning_projects(fiscalYear: str = Query("FY_25-26")):
                 row_dict.get('jul') or 0,
                 row_dict.get('aug') or 0,
                 row_dict.get('sep') or 0,
-                row_dict.get('oct') or 0
+                row_dict.get('oct') or 0,
+                row_dict.get('nov') or 0
             ])
             
             # Calculate quarters
@@ -1717,80 +1654,184 @@ def get_upload_status(fiscalYear: str = Query("FY_25-26")):
 
 # --- Chatbot Endpoint ---
 
-class ChatRequest(BaseModel):
-    message: str
-    context: Optional[Dict[str, Any]] = None
-
-@app.post("/chat")
+@app.post("/api/chat")
 async def chat_endpoint(request: ChatRequest):
+    """
+    Dummy Chatbot Endpoint - LLM removed for data sensitivity.
+    Provides generic responses without sending any data to external APIs.
+    """
     try:
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            raise HTTPException(status_code=500, detail="OpenAI API Key not configured")
-
-        client = openai.OpenAI(api_key=api_key)
-
-        # 1. Fetch relevant data from DB to give "Real Answers"
-        conn = get_db_connection()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        user_msg = request.message.lower()
         
-        # Get latest fiscal year summary
-        cursor.execute("SELECT * FROM commissioning_summaries ORDER BY fiscal_year DESC LIMIT 1")
-        summary_row = cursor.fetchone()
-        summary_data = dict(summary_row) if summary_row else {}
+        # Simple rule-based dummy responses
+        if "hello" in user_msg or "hi" in user_msg:
+            response = "Hello! I am your AGEL Data Assistant. How can I help you navigate the dashboard today?"
+        elif "status" in user_msg or "summary" in user_msg:
+            response = "You can view the latest Commissioning Status in the 'Commissioning Status' page. The data currently reflects the FY 25-26 project lifecycle as of the latest update."
+        elif "solar" in user_msg:
+            response = "The Solar portfolio is divided into Khavda and Rajasthan projects. You can filter by these categories in the main dashboard for a detailed drill-down."
+        elif "wind" in user_msg:
+            response = "The Wind portfolio includes Khavda and Mundra projects. Achievement is calculated based on cumulative capacity vs targets."
+        elif "export" in user_msg or "download" in user_msg:
+            response = "You can export the current view to Excel using the 'Export' button located at the top of the Commissioning Status page."
+        else:
+            response = "I am currently in 'Offline Mode' to protect sensitive data. I can assist with general questions about the dashboard layout and features."
 
-        # Get a sample of projects (e.g. top 10 by capacity)
-        cursor.execute("SELECT * FROM commissioning_projects ORDER BY CAST(capacity AS FLOAT) DESC LIMIT 10")
-        project_rows = cursor.fetchall()
-        projects_data = [dict(row) for row in project_rows]
-        
-        conn.close()
-
-        # 2. Construct System Prompt
-        system_prompt = """You are the AGEL AI Analyst, an intelligent assistant for Adani Green Energy Ltd. 
-        You have direct access to the latest commissioning database.
-        
-        CURRENT DATA CONTEXT:
-        """
-        
-        if summary_data:
-            system_prompt += f"\n[Overall Performance Summary]:\n{json.dumps(summary_data, indent=2)}"
-        
-        if projects_data:
-            system_prompt += f"\n\n[Top 10 Major Projects]:\n{json.dumps(projects_data, indent=2)}"
-            
-        system_prompt += """
-        
-        INSTRUCTIONS:
-        - Answer the user's question based strictly on the provided data context if applicable.
-        - If the user asks about specific numbers (like 'total solar capacity'), use the data above.
-        - Be professional, concise, and business-oriented.
-        - If data is missing for a specific query, politely say you don't have that specific detail in the summary view.
-        """
-
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo", 
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": request.message}
-            ],
-            temperature=0.7,
-        )
-
-        return {"response": response.choices[0].message.content}
+        return {"response": response}
 
     except Exception as e:
         print(f"Chat Error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
+        return {"response": "I'm sorry, I'm having trouble responding right now. Please try again later."}
 
-# Additional route with /api prefix for direct access
-@app.post("/api/chat")
-async def api_chat_endpoint(request: ChatRequest):
-    return await chat_endpoint(request)
+
+# --- Master Data Management Endpoints ---
+
+@app.get("/api/dropdown-options")
+def get_dropdown_options(fiscalYear: str = Query("FY_25-26")):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT option_type, option_value FROM dropdown_options WHERE fiscal_year = ?", (fiscalYear,))
+        rows = cursor.fetchall()
+        
+        # Initialize dictionary with empty lists
+        options = {
+            "groups": [], "ppaMerchants": [], "types": [], 
+            "locationCodes": [], "locations": [], "connectivities": [], 
+            "sections": [], "categories": []
+        }
+        
+        # Map values to correct types
+        mapping = {
+            "groups": "groups", "ppa_merchants": "ppaMerchants", "types": "types",
+            "location_codes": "locationCodes", "locations": "locations", 
+            "connectivities": "connectivities", "sections": "sections",
+            "categories": "categories"
+        }
+        
+        for opt_type, opt_val in rows:
+            mapped_key = mapping.get(opt_type, opt_type)
+            if mapped_key in options:
+                options[mapped_key].append(opt_val)
+                
+        # Fill defaults if missing
+        if not options["sections"]: options["sections"] = ["A", "B", "C", "D", "E"]
+        if not options["ppaMerchants"]: options["ppaMerchants"] = ["AGEL", "AREPL", "AHPPL"]
+        if not options["types"]: options["types"] = ["PPA", "Merchant", "Group"]
+        if not options["categories"]: options["categories"] = ["Solar", "Wind"]
+             
+        return options
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.post("/api/dropdown-options")
+def save_dropdown_options(options: DropdownOptionsModel, fiscalYear: str = Query("FY_25-26")):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # Clear existing
+        cursor.execute("DELETE FROM dropdown_options WHERE fiscal_year = ?", (fiscalYear,))
+        
+        # Reverse mapping for storage
+        inv_mapping = {
+            "groups": "groups", "ppaMerchants": "ppa_merchants", "types": "types",
+            "locationCodes": "location_codes", "locations": "locations", 
+            "connectivities": "connectivities", "sections": "sections",
+            "categories": "categories"
+        }
+        
+        data_dict = options.dict()
+        for key, values in data_dict.items():
+            db_key = inv_mapping.get(key, key)
+            for val in values:
+                cursor.execute(
+                    "INSERT INTO dropdown_options (option_type, option_value, fiscal_year) VALUES (?, ?, ?)",
+                    (db_key, val, fiscalYear)
+                )
+        conn.commit()
+        return {"success": True}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.get("/api/location-relationships")
+def get_location_relationships(fiscalYear: str = Query("FY_25-26")):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT location, location_code FROM location_relationships WHERE fiscal_year = ?", (fiscalYear,))
+        rows = cursor.fetchall()
+        return [{"location": r[0], "locationCode": r[1]} for r in rows]
+    finally:
+        conn.close()
+
+@app.post("/api/location-relationships")
+def save_location_relationships(relationships: List[Dict[str, str]], fiscalYear: str = Query("FY_25-26")):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM location_relationships WHERE fiscal_year = ?", (fiscalYear,))
+        for rel in relationships:
+            cursor.execute(
+                "INSERT INTO location_relationships (location, location_code, fiscal_year) VALUES (?, ?, ?)",
+                (rel.get('location'), rel.get('locationCode'), fiscalYear)
+            )
+        conn.commit()
+        return {"success": True}
+    finally:
+        conn.close()
+
+@app.post("/api/manual-add-project")
+async def manual_add_project(request: ManualProjectRequest):
+    """
+    Manually add a project and its 3 corresponding tracking rows (Plan, Rephase, Actual).
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 1. Find the next S.No for this fiscal year
+        cursor.execute("SELECT MAX(sno) FROM commissioning_projects WHERE fiscal_year = ?", (request.fiscalYear,))
+        max_sno_row = cursor.fetchone()
+        max_sno = max_sno_row[0] if max_sno_row and max_sno_row[0] is not None else 0
+        new_sno = max_sno + 1
+        
+        # 2. Add 3 rows
+        statuses = ['Plan', 'Rephase', 'Actual']
+        for status in statuses:
+            cursor.execute('''
+                INSERT INTO commissioning_projects (
+                    sno, category, section, project_name, spv, project_type, 
+                    capacity, plan_actual, fiscal_year, is_deleted,
+                    total_capacity, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+            ''', (
+                new_sno, request.category, request.section, request.projectName, 
+                request.spv, request.projectType, request.capacity, status, 
+                request.fiscalYear, request.capacity, 'Active'
+            ))
+        
+        conn.commit()
+        
+        # 3. Recalculate derived (sets initial 0s for quarters etc)
+        from main import calculate_derived_values
+        calculate_derived_values(cursor)
+        conn.commit()
+        
+        conn.close()
+        return {"success": True, "message": f"Project '{request.projectName}' added successfully."}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Debug route to verify server update
 @app.get("/debug-ping")
+
 def debug_ping():
     return {"message": "pong"}
 

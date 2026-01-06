@@ -83,14 +83,14 @@ const sectionDisplayNames: Record<string, string> = {
 
 // Category display name mapping for cleaner dropdown labels WITH section prefixes
 const categoryDisplayNames: Record<string, string> = {
-  // Solar Categories - A, B, C, D1, D2 prefixes
-  'Khavda Solar Projects': 'A. Khavda Solar Projects',
-  'Rajasthan Solar Projects': 'B. Rajasthan Solar Projects',
+  // Solar Categories
+  'Khavda Solar': 'A. Khavda Solar Projects',
+  'Rajasthan Solar': 'B. Rajasthan Solar Projects',
   'Rajasthan Solar Additional 500MW': 'C. Rajasthan Solar Additional 500MW',
-  'Khavda Solar Copper + Merchant 50MW': 'D1. Khavda Solar Copper (Excluded)',
+  'Khavda Solar Copper+Merchant 50MW': 'D1. Khavda Solar Copper (Excluded)',
   'Khavda Solar Internal 650MW': 'D2. Khavda Solar Internal (Excluded)',
-  // Wind Categories - A, B, C, D prefixes
-  'Khavda Wind Projects': 'A. Khavda Wind Projects',
+  // Wind Categories
+  'Khavda Wind': 'A. Khavda Wind Projects',
   'Khavda Wind Internal 421MW': 'B. Khavda Wind Internal (Excluded)',
   'Mundra Wind 76MW': 'C. Mundra Wind 76MW',
   'Mundra Wind Internal 224.4MW': 'D. Mundra Wind Internal (Excluded)',
@@ -143,13 +143,13 @@ export default function CommissioningStatusPage() {
   const queryClient = useQueryClient();
   const { user, isAdmin, logout } = useAuth();
   const [fiscalYear] = useState('FY_25-26');
-  const [activeTab, setActiveTab] = useState<'overview' | 'solar' | 'wind'>('overview');
+  const [activeTab, setActiveTab] = useState<string>('overview');
 
   // Filter states
   const [filters, setFilters] = useState({
     category: '',
     projectType: '',
-    planActual: 'All',  // Default to All
+    planActual: 'All',
     spv: '',
     section: '',
     showExcluded: true, // Show items excluded from totals
@@ -199,6 +199,18 @@ export default function CommissioningStatusPage() {
     staleTime: 5 * 60 * 1000,
   });
 
+  // Fetch Master Data for dynamic categories
+  const { data: masterData } = useQuery({
+    queryKey: ['masterData', fiscalYear],
+    queryFn: async () => {
+      const response = await fetch(`/api/dropdown-options?fiscalYear=${fiscalYear}`);
+      if (!response.ok) throw new Error('Failed to fetch master data');
+      return response.json();
+    }
+  });
+
+  const categories = masterData?.categories || ['Solar', 'Wind'];
+
   // Save projects mutation
   const saveProjectsMutation = useMutation({
     mutationFn: async (updatedProjects: CommissioningProject[]) => {
@@ -225,18 +237,12 @@ export default function CommissioningStatusPage() {
     }));
   };
 
-  // Toggle all sections
   const toggleAllSections = (expand: boolean) => {
     const allSections: Record<string, boolean> = {};
     if (expand) {
-      Object.keys(sectionDisplayNames).forEach(k => {
-        allSections[k] = true;
-      });
-      // Also ensure project specific sections are covered
-      projects.forEach((p: { section: string | number; }) => {
-        allSections[`Solar-${p.section}`] = true;
-        allSections[`Wind-${p.section}`] = true;
-        allSections[p.section] = true;
+      projects.forEach((p: CommissioningProject) => {
+        const mainCat = categories.find((c: string) => p.category.toLowerCase().includes(c.toLowerCase())) || 'Other';
+        allSections[`${mainCat}-${p.section}`] = true;
       });
     }
     setExpandedSections(allSections);
@@ -258,77 +264,35 @@ export default function CommissioningStatusPage() {
     // Get all unique categories (original full names)
     const allCategories = [...new Set(projects.map((p: CommissioningProject) => p.category))] as string[];
 
-    // Define order for Solar sections (A, B, C, D1, D2)
-    const solarOrder = [
-      'Khavda Solar Projects',           // A
-      'Rajasthan Solar Projects',         // B
-      'Rajasthan Solar Additional 500MW', // C
-      'Khavda Solar Copper + Merchant 50MW', // D1
-      'Khavda Solar Internal 650MW'       // D2
-    ];
-
-    // Define order for Wind sections (A, B, C, D)
-    const windOrder = [
-      'Khavda Wind Projects',            // A
-      'Khavda Wind Internal 421MW',      // B
-      'Mundra Wind 76MW',                // C
-      'Mundra Wind Internal 224.4MW'     // D
-    ];
-
-    // Sort categories by predefined order
-    const sortByOrder = (categories: string[], order: string[]) => {
-      return order.filter(item => categories.includes(item));
-    };
-
-    // Group and sort categories by Solar/Wind
-    const solarCategories = sortByOrder(allCategories.filter(c => c.toLowerCase().includes('solar')), solarOrder);
-    const windCategories = sortByOrder(allCategories.filter(c => c.toLowerCase().includes('wind')), windOrder);
-
-    // Filter categories based on selected category type (already sorted)
-    let filteredCategories = [...solarCategories, ...windCategories]; // All in order
-    if (filters.category === 'solar') {
-      filteredCategories = solarCategories;
-    } else if (filters.category === 'wind') {
-      filteredCategories = windCategories;
+    // Filter categories based on selected category type
+    let filteredCategories = allCategories;
+    if (filters.category) {
+      filteredCategories = allCategories.filter(c => c.toLowerCase().includes(filters.category.toLowerCase()));
     }
 
     return {
       projectTypes,
       planActuals,
       spvs,
-      solarCategories,
-      windCategories,
-      filteredCategories // Sections to show based on category type (SORTED)
+      filteredCategories
     };
   }, [projects, filters.category]);
 
-  // Reset section when category type changes and section doesn't match
-  const handleCategoryTypeChange = (newCategoryType: string) => {
-    setFilters(prev => {
-      // If section is selected and doesn't match new category type, clear it
-      if (prev.section) {
-        const sectionCategory = filterOptions.filteredCategories.find(c =>
-          c === prev.section || c.includes(prev.section)
-        );
-        if (newCategoryType === 'solar' && sectionCategory && !sectionCategory.toLowerCase().includes('solar')) {
-          return { ...prev, category: newCategoryType, section: '' };
-        }
-        if (newCategoryType === 'wind' && sectionCategory && !sectionCategory.toLowerCase().includes('wind')) {
-          return { ...prev, category: newCategoryType, section: '' };
-        }
-      }
-      return { ...prev, category: newCategoryType };
-    });
+  // Reset section when category changes
+  const handleCategoryTypeChange = (newCategory: string) => {
+    setFilters(prev => ({ ...prev, category: newCategory, section: '' }));
   };
 
   // Filtered projects - now filters by category TYPE (solar/wind) instead of exact match
   const filteredProjects = useMemo(() => {
     return projects.filter((p: CommissioningProject) => {
-      // Filter by category TYPE (solar/wind)
-      if (filters.category === 'solar' && !p.category.toLowerCase().includes('solar')) return false;
-      if (filters.category === 'wind' && !p.category.toLowerCase().includes('wind')) return false;
+      // Filter by category
+      if (filters.category && !p.category.toLowerCase().includes(filters.category.toLowerCase())) return false;
       if (filters.projectType && p.projectType !== filters.projectType) return false;
-      if (filters.planActual && filters.planActual !== 'All' && p.planActual !== filters.planActual) return false;
+      if (filters.planActual && filters.planActual !== 'All') {
+        const filterVal = filters.planActual === 'Actual/Fcst' ? 'Actual' : filters.planActual;
+        if (p.planActual !== filterVal) return false;
+      }
       if (filters.spv && p.spv !== filters.spv) return false;
       // Filter by section (exact category match)
       if (filters.section && p.category !== filters.section) return false;
@@ -339,13 +303,9 @@ export default function CommissioningStatusPage() {
   // Filter projects by tab - RESPECTS CAPACITY TYPE EXCLUSIVITY FROM BACKEND
   const tabProjects = useMemo(() => {
     let filtered = filteredProjects;
-    if (activeTab === 'solar') {
+    if (activeTab !== 'overview') {
       filtered = filteredProjects.filter((p: CommissioningProject) =>
-        p.category.toLowerCase().includes('solar')
-      );
-    } else if (activeTab === 'wind') {
-      filtered = filteredProjects.filter((p: CommissioningProject) =>
-        p.category.toLowerCase().includes('wind')
+        p.category.toLowerCase().includes(activeTab.toLowerCase())
       );
     }
 
@@ -360,25 +320,19 @@ export default function CommissioningStatusPage() {
 
   // Group projects by category and section
   const groupedProjects = useMemo(() => {
-    // Instead of dynamic categories, we force bucket into Solar and Wind based on the hierarchy
-    const solarProjects = tabProjects.filter((p: CommissioningProject) => p.category.toLowerCase().includes('solar'));
-    const windProjects = tabProjects.filter((p: CommissioningProject) => p.category.toLowerCase().includes('wind'));
+    const groups: Record<string, Record<string, CommissioningProject[]>> = {};
 
-    // Further group by section
-    const bySection = (projs: CommissioningProject[]) => {
-      const groups: Record<string, CommissioningProject[]> = {};
-      projs.forEach(p => {
-        if (!groups[p.section]) groups[p.section] = [];
-        groups[p.section].push(p);
-      });
-      return groups;
-    };
+    tabProjects.forEach((p: CommissioningProject) => {
+      // Find which main category this project belongs to
+      const mainCat = categories.find((c: string) => p.category.toLowerCase().includes(c.toLowerCase())) || 'Other';
 
-    return {
-      Solar: bySection(solarProjects),
-      Wind: bySection(windProjects)
-    };
-  }, [tabProjects]);
+      if (!groups[mainCat]) groups[mainCat] = {};
+      if (!groups[mainCat][p.section]) groups[mainCat][p.section] = [];
+      groups[mainCat][p.section].push(p);
+    });
+
+    return groups;
+  }, [tabProjects, categories]);
 
   // Calculate totals for a group of projects - ENFORCES RULES
   const calculateTotals = (projectsToSum: CommissioningProject[]) => {
@@ -390,7 +344,7 @@ export default function CommissioningStatusPage() {
       q1: 0, q2: 0, q3: 0, q4: 0
     };
 
-    projectsToSum.forEach(p => {
+    projectsToSum.forEach((p: CommissioningProject) => {
       // CRITICAL: Only include projects marked as included_in_total
       if (!p.includedInTotal) return;
 
@@ -416,16 +370,16 @@ export default function CommissioningStatusPage() {
     // Filter to only included projects
     const includedProjects = projects.filter((p: CommissioningProject) => p.includedInTotal);
 
-    const solarProjects = includedProjects.filter((p: CommissioningProject) =>
-      p.category.toLowerCase().includes('solar')
-    );
-    const windProjects = includedProjects.filter((p: CommissioningProject) =>
-      p.category.toLowerCase().includes('wind')
-    );
+    const totalsByCat: Record<string, any> = {};
+    categories.forEach((cat: string) => {
+      const catProjects = includedProjects.filter((p: CommissioningProject) =>
+        p.category.toLowerCase().includes(cat.toLowerCase())
+      );
+      totalsByCat[cat.toLowerCase()] = calculateTotals(catProjects);
+    });
 
     return {
-      solar: calculateTotals(solarProjects),
-      wind: calculateTotals(windProjects),
+      categories: totalsByCat,
       total: calculateTotals(includedProjects)
     };
   };
@@ -532,7 +486,7 @@ export default function CommissioningStatusPage() {
   };
 
   const handleExportData = () => {
-    const dataToExport = filteredProjects.map(p => ({
+    const dataToExport = filteredProjects.map((p: { sno: any; projectName: any; category: any; section: any; spv: any; projectType: any; plotLocation: any; capacity: any; planActual: any; includedInTotal: any; apr: any; may: any; jun: any; jul: any; aug: any; sep: any; oct: any; nov: any; dec: any; jan: any; feb: any; mar: any; totalCapacity: any; }) => ({
       'S.No': p.sno,
       'Project Name': p.projectName,
       'Category': p.category,
@@ -576,39 +530,36 @@ export default function CommissioningStatusPage() {
             For Chairman – Budget Purpose @ 6.5 GW + 535 MW Carryover | As on: 31-Oct-25
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {user && (
-            <span className={`px-3 py-1 rounded-full text-xs font-medium ${isAdmin
-              ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-              : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
-              }`}>
-              {isAdmin ? 'Admin' : 'Viewer'}
-            </span>
-          )}
-        </div>
       </div>
 
       {/* Tabs - Enhanced with icons and color coding */}
       <div className="border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
         <nav className="flex gap-2">
-          {[
-            { key: 'overview', label: '▣ Overall Summary', color: 'blue' },
-            { key: 'solar', label: '● Solar Projects', color: 'orange' },
-            { key: 'wind', label: '◆ Wind Projects', color: 'cyan' }
-          ].map((tab) => (
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`px-6 py-3 text-sm font-bold transition-all relative ${activeTab === 'overview'
+              ? 'text-indigo-600 dark:text-indigo-400'
+              : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
+              }`}
+          >
+            Overview
+            {activeTab === 'overview' && (
+              <div className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-600 dark:bg-indigo-400"></div>
+            )}
+          </button>
+          {categories.map((cat: string) => (
             <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key as any)}
-              className={`py-3 px-5 text-sm font-bold border-b-3 transition-all rounded-t-lg ${activeTab === tab.key
-                ? tab.color === 'orange'
-                  ? 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400'
-                  : tab.color === 'cyan'
-                    ? 'border-cyan-500 bg-cyan-50 text-cyan-700 dark:bg-cyan-900/20 dark:text-cyan-400'
-                    : 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400'
-                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
+              key={cat}
+              onClick={() => setActiveTab(cat.toLowerCase())}
+              className={`px-6 py-3 text-sm font-bold transition-all relative ${activeTab === cat.toLowerCase()
+                ? 'text-indigo-600 dark:text-indigo-400'
+                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
                 }`}
             >
-              {tab.label}
+              {cat}
+              {activeTab === cat.toLowerCase() && (
+                <div className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-600 dark:bg-indigo-400"></div>
+              )}
             </button>
           ))}
         </nav>
@@ -679,8 +630,9 @@ export default function CommissioningStatusPage() {
               className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/20"
             >
               <option value="">▣ All Categories</option>
-              <option value="solar">● Solar</option>
-              <option value="wind">◆ Wind</option>
+              {categories.map((cat: string) => (
+                <option key={cat} value={cat.toLowerCase()}>● {cat}</option>
+              ))}
             </select>
           </div>
           <div className="flex-2 min-w-[240px]">
@@ -746,7 +698,7 @@ export default function CommissioningStatusPage() {
 
       {/* Summary Cards - Minimalist Adani Style */}
       {activeTab === 'overview' && !filters.section && !filters.category && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
           <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl p-5 shadow-lg text-white relative overflow-hidden group hover:shadow-xl transition-all">
             <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
               <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 20 20"><path d="M3 1a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 11.846 4.632 14 6.414 14H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 3H6.28l-.31-1.243A1 1 0 005 1H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" /></svg>
@@ -754,58 +706,56 @@ export default function CommissioningStatusPage() {
             <h3 className="text-[10px] font-bold text-blue-100 uppercase tracking-wider mb-2">Total Included Capacity</h3>
             <p className="text-2xl sm:text-3xl font-bold text-white shadow-sm">{formatNumber(hierarchicalTotals.total.totalCapacity)} <span className="text-sm font-medium text-blue-100">MW</span></p>
           </div>
-          <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl p-5 shadow-lg text-white relative overflow-hidden group hover:shadow-xl transition-all">
+          <div className="bg-gradient-to-br from-[#0B74B0] to-blue-600 rounded-xl p-5 shadow-lg text-white relative overflow-hidden group hover:shadow-xl transition-all">
             <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
               <svg className="w-16 h-16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
             </div>
-            <h3 className="text-[10px] font-bold text-emerald-100 uppercase tracking-wider mb-2">Achieved till Oct-25</h3>
+            <h3 className="text-[10px] font-bold text-emerald-100 uppercase tracking-wider mb-2">Achieved (Overall)</h3>
             <p className="text-2xl sm:text-3xl font-bold text-white shadow-sm">{formatNumber(hierarchicalTotals.total.cummTillOct)} <span className="text-sm font-medium text-emerald-100">MW</span></p>
           </div>
-          <div className="bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl p-5 shadow-lg text-white relative overflow-hidden group hover:shadow-xl transition-all">
-            <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-              <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" /></svg>
-            </div>
-            <h3 className="text-[10px] font-bold text-orange-100 uppercase tracking-wider mb-2">Overall Solar Capacity</h3>
-            <p className="text-2xl sm:text-3xl font-bold text-white shadow-sm">{formatNumber(hierarchicalTotals.solar.totalCapacity)} <span className="text-sm font-medium text-orange-100">MW</span></p>
-          </div>
-          <div className="bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl p-5 shadow-lg text-white relative overflow-hidden group hover:shadow-xl transition-all">
-            <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-              <svg className="w-16 h-16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            </div>
-            <h3 className="text-[10px] font-bold text-cyan-100 uppercase tracking-wider mb-2">Overall Wind Capacity</h3>
-            <p className="text-2xl sm:text-3xl font-bold text-white shadow-sm">{formatNumber(hierarchicalTotals.wind.totalCapacity)} <span className="text-sm font-medium text-cyan-100">MW</span></p>
-          </div>
+          {categories.map((cat: string, idx: number) => {
+            const catKey = cat.toLowerCase();
+            const catTotals = hierarchicalTotals.categories[catKey] || calculateTotals([]);
+            const colors = [
+              'from-orange-500 to-amber-600',
+              'from-cyan-500 to-blue-600',
+              'from-emerald-500 to-teal-600',
+              'from-purple-500 to-indigo-600'
+            ];
+            const color = colors[idx % colors.length];
+
+            return (
+              <div key={cat} className={`bg-gradient-to-br ${color} rounded-xl p-5 shadow-lg text-white relative overflow-hidden group hover:shadow-xl transition-all`}>
+                <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                  <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" /></svg>
+                </div>
+                <h3 className="text-[10px] font-bold opacity-80 uppercase tracking-wider mb-2">Overall {cat}</h3>
+                <p className="text-2xl sm:text-3xl font-bold text-white shadow-sm">{formatNumber(catTotals.totalCapacity)} <span className="text-sm font-medium opacity-80">MW</span></p>
+              </div>
+            );
+          })}
         </div>
       )}
 
       {/* PDF-Style Summary Tables - Only show when no specific section/category is selected */}
       {activeTab === 'overview' && !filters.section && !filters.category && (
         <div className="space-y-6">
-          {/* AGEL Overall Solar Summary */}
-          <SummaryTable
-            title="1. AGEL Overall Solar FY 2025-26 (A + B + C)"
-            projects={projects.filter((p: CommissioningProject) =>
-              p.category.toLowerCase().includes('solar') && p.includedInTotal
-            )}
-            monthColumns={monthColumns}
-            monthLabels={monthLabels}
-            formatNumber={formatNumber}
-          />
+          {categories.map((cat: string, idx: number) => (
+            <SummaryTable
+              key={cat}
+              title={`${idx + 1}. AGEL Overall ${cat} FY 2025-26`}
+              projects={projects.filter((p: CommissioningProject) =>
+                p.category.toLowerCase().includes(cat.toLowerCase()) && p.includedInTotal
+              )}
+              monthColumns={monthColumns}
+              monthLabels={monthLabels}
+              formatNumber={formatNumber}
+            />
+          ))}
 
-          {/* AGEL Overall Wind Summary */}
+          {/* AGEL Overall FY Summary (All Categories) */}
           <SummaryTable
-            title="2. AGEL Overall Wind FY 2025-26 (A + C)"
-            projects={projects.filter((p: CommissioningProject) =>
-              p.category.toLowerCase().includes('wind') && p.includedInTotal
-            )}
-            monthColumns={monthColumns}
-            monthLabels={monthLabels}
-            formatNumber={formatNumber}
-          />
-
-          {/* AGEL Overall FY Summary (Solar + Wind) */}
-          <SummaryTable
-            title="AGEL Overall FY 2025-26 (1 + 2)"
+            title={`AGEL Overall FY 2025-26 (${categories.map((_: string, i: number) => i + 1).join(' + ')})`}
             projects={projects.filter((p: CommissioningProject) => p.includedInTotal)}
             monthColumns={monthColumns}
             monthLabels={monthLabels}
@@ -865,26 +815,26 @@ export default function CommissioningStatusPage() {
             </span>
           </div>
         </div>
-
         <div className="overflow-x-auto overflow-y-auto max-h-[800px] border dark:border-gray-700 rounded-lg">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 border-collapse">
             <thead className="bg-gray-100 dark:bg-gray-800 sticky top-0 z-30 shadow-sm">
               <tr>
-                <th className="sticky left-0 z-40 bg-gray-100 dark:bg-gray-800 px-3 py-3 text-left text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">S.No</th>
-                <th className="sticky left-[52px] z-40 px-3 py-3 text-left text-[10px] font-bold text-gray-800 dark:text-white uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 whitespace-nowrap shadow-[2px_0_5px_rgba(0,0,0,0.05)]">Project Name</th>
-                <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">SPV</th>
-                <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">Type</th>
-                <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">Location</th>
-                <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">Capacity</th>
+                <th className="sticky left-0 z-30 bg-gray-100 dark:bg-gray-800 px-2 py-3 text-center text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-r border-gray-200 dark:border-gray-700 w-[50px]">S.No.</th>
+                <th className="sticky left-[50px] z-30 bg-gray-100 dark:bg-gray-800 px-3 py-3 text-left text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-r border-gray-200 dark:border-gray-700 min-w-[180px]">Project Name</th>
+                <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-r border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">SPV</th>
+                <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-r border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">Type</th>
+                <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-r border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">Location</th>
+                <th className="px-2 py-3 text-center text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-r border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 w-[70px]">Capacity</th>
+                <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-r border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 w-[110px]">Plan / Actual</th>
                 {monthLabels.map((month, idx) => (
-                  <th key={idx} className="px-2 py-3 text-center text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 min-w-[65px]">{month}</th>
+                  <th key={idx} className="px-2 py-3 text-center text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider border-b border-r border-gray-200 dark:border-gray-700 min-w-[75px]">{month}</th>
                 ))}
-                <th className="px-3 py-3 text-center text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">Total</th>
-                <th className="px-3 py-3 text-center text-[10px] font-bold text-[#0B74B0] dark:text-blue-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">Cumm Oct</th>
-                <th className="px-3 py-3 text-center text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">Q1</th>
-                <th className="px-3 py-3 text-center text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">Q2</th>
-                <th className="px-3 py-3 text-center text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">Q3</th>
-                <th className="px-3 py-3 text-center text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">Q4</th>
+                <th className="px-3 py-3 text-center text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider border-b border-r border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 min-w-[90px]">Total Capacity</th>
+                <th className="px-3 py-3 text-center text-[10px] font-bold text-[#0B74B0] dark:text-blue-400 uppercase tracking-wider border-b border-r border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 min-w-[120px]">Cumm till 30-Nov-25</th>
+                <th className="px-3 py-3 text-center text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider border-b border-r border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 min-w-[65px]">Q1</th>
+                <th className="px-3 py-3 text-center text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider border-b border-r border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 min-w-[65px]">Q2</th>
+                <th className="px-3 py-3 text-center text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider border-b border-r border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 min-w-[65px]">Q3</th>
+                <th className="px-3 py-3 text-center text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider border-b border-r border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 min-w-[65px]">Q4</th>
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800">
@@ -895,20 +845,16 @@ export default function CommissioningStatusPage() {
                   </td>
                 </tr>
               ) : (
-                (['Solar', 'Wind'] as const).map(groupKey => {
-                  const groupConfig = groupKey === 'Solar' ? HIERARCHY.SOLAR : HIERARCHY.WIND;
-                  const projectsBySection = groupedProjects[groupKey];
+                Object.entries(groupedProjects).map(([category, sections]) => {
+                  // Determine group config based on category name
+                  const groupConfig = category.toLowerCase().includes('solar') ? HIERARCHY.SOLAR : HIERARCHY.WIND;
 
-                  // Only render group if there are projects or if we're in overview/respective tab
-                  const hasProjects = Object.values(projectsBySection).some(arr => arr.length > 0);
-                  if (!hasProjects) return null;
-
-                  // Calculate group totals (Solar/Wind Total)
-                  const allGroupProjects = Object.values(projectsBySection).flat().filter(p => p.includedInTotal);
+                  // Calculate group totals (e.g., Solar Total, Wind Total)
+                  const allGroupProjects = Object.values(sections).flat().filter(p => p.includedInTotal);
                   const groupTotal = calculateTotals(allGroupProjects);
 
                   return (
-                    <React.Fragment key={`group-${groupKey}`}>
+                    <React.Fragment key={`group-${category}`}>
                       {/* Major Group Header - Minimal Style */}
                       <tr className="bg-gray-50 dark:bg-gray-800 border-y border-gray-200 dark:border-gray-700">
                         <td colSpan={24} className="px-4 py-2 text-xs font-bold text-gray-800 dark:text-white uppercase tracking-wider">
@@ -916,32 +862,30 @@ export default function CommissioningStatusPage() {
                         </td>
                       </tr>
 
-                      {/* Iterate Sections in predefined order */}
-                      {groupConfig.sections.map(section => {
-                        const sectionProjects = projectsBySection[section] || [];
+                      {/* Iterate Sections present in data */}
+                      {Object.keys(sections).sort().map(sectionName => {
+                        const sectionProjects = sections[sectionName] || [];
                         if (sectionProjects.length === 0) return null;
 
                         const sectionTotal = calculateTotals(sectionProjects);
-                        const isExcludedSection = !SECTION_INCLUSION_RULES[getSectionDisplayName(section)]; // Simple check based on section map assumption or project flag
-                        // Actually, trusting project's includedInTotal is safer, but user layout implies sections like D1/D2 are fixed excluded
                         const anyIncluded = sectionProjects.some(p => p.includedInTotal);
 
                         return (
-                          <React.Fragment key={`sec-${groupKey}-${section}`}>
+                          <React.Fragment key={`sec-${category}-${sectionName}`}>
                             <tr
                               className={`${groupConfig.bgLight} ${groupConfig.borderColor} border-l-4 cursor-pointer hover:brightness-95 transition-all`}
-                              onClick={() => toggleSection(`${groupKey}-${section}`)}
+                              onClick={() => toggleSection(`${category}-${sectionName}`)}
                             >
                               <td colSpan={24} className={`px-4 py-3 text-sm font-bold ${groupConfig.textColor}`}>
                                 <div className="flex items-center justify-between w-full">
                                   <span className="flex items-center gap-3">
-                                    <span className={`transition-transform duration-200 ${expandedSections[`${groupKey}-${section}`] ? 'rotate-90' : ''}`}>
+                                    <span className={`transition-transform duration-200 ${expandedSections[`${category}-${sectionName}`] ? 'rotate-90' : ''}`}>
                                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
                                       </svg>
                                     </span>
-                                    <span className={`w-2 h-2 rounded-full ${groupKey === 'Solar' ? 'bg-orange-500' : 'bg-cyan-500'}`}></span>
-                                    {getSectionDisplayName(section)}
+                                    <span className={`w-2 h-2 rounded-full ${category.toLowerCase().includes('solar') ? 'bg-orange-500' : 'bg-cyan-500'}`}></span>
+                                    {getSectionDisplayName(sectionName)}
                                     {!anyIncluded && (
                                       <span className="px-2 py-0.5 text-xs bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-300 rounded-full border border-gray-300 dark:border-gray-500 uppercase tracking-wider">
                                         Excluded (Display Only)
@@ -954,77 +898,126 @@ export default function CommissioningStatusPage() {
                                     )}
                                   </span>
                                   <span className="text-xs uppercase opacity-60 font-medium">
-                                    {expandedSections[`${groupKey}-${section}`] ? 'Collapse' : 'Expand'} ({sectionProjects.length} Projects)
+                                    {expandedSections[`${category}-${sectionName}`] ? 'Collapse' : 'Expand'} ({sectionProjects.length} Projects)
                                   </span>
                                 </div>
                               </td>
                             </tr>
 
-                            {/* Projects - with zebra striping - Only show if expanded */}
-                            {expandedSections[`${groupKey}-${section}`] && sectionProjects.map((project, idx) => (
-                              <tr
-                                key={project.id || `${groupKey}-${section}-${idx}`}
-                                className={`
-                                  ${!project.includedInTotal
-                                    ? 'bg-gray-50/50 text-gray-400 dark:bg-gray-800/50 dark:text-gray-500'
-                                    : idx % 2 === 0
-                                      ? 'bg-white dark:bg-gray-800'
-                                      : 'bg-gray-50 dark:bg-gray-900'}
-                                  text-gray-900 dark:text-gray-100
-                                  border-b border-gray-100 dark:border-gray-700
-                                  hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors
-                                `}
-                              >
-                                <td className="sticky left-0 z-10 bg-inherit px-3 py-2 text-xs font-bold text-gray-400 dark:text-gray-500 border-r border-gray-100 dark:border-gray-800 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
-                                  {project.sno}
-                                </td>
-                                <td className="sticky left-[52px] z-10 bg-inherit px-3 py-2 text-xs whitespace-nowrap shadow-[2px_0_5px_rgba(0,0,0,0.05)] border-r border-gray-100 dark:border-gray-700 font-bold">
-                                  {project.projectName}
-                                </td>
-                                <td className="px-3 py-2 text-xs text-gray-600 dark:text-gray-400">{project.spv}</td>
-                                <td className="px-3 py-2 text-xs">
-                                  <span className="font-medium text-gray-500">{project.projectType}</span>
-                                </td>
-                                <td className="px-3 py-2 text-xs text-gray-600 dark:text-gray-400">{project.plotLocation}</td>
-                                <td className="px-3 py-2 text-xs font-bold text-gray-900 dark:text-white">{formatNumber(project.capacity)}</td>
-                                <td className="px-3 py-2 text-xs">
-                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${project.planActual === 'Plan' ? 'bg-slate-100 text-slate-600' :
-                                    project.planActual === 'Rephase' ? 'bg-amber-100 text-amber-700' :
-                                      'bg-green-100 text-green-700'
-                                    }`}>
-                                    {project.planActual === 'Actual' ? 'Actual/Fcst' : project.planActual}
-                                  </span>
-                                </td>
-                                {monthColumns.map(m => (
-                                  <EditableCell
-                                    key={m}
-                                    project={project}
-                                    field={m}
-                                    value={(project as any)[m]}
-                                    isEditing={editingCell?.projectId === project.id && editingCell?.field === m}
-                                    onEdit={() => isAdmin && setEditingCell({ projectId: project.id!, field: m })}
-                                    onSave={(val) => handleCellSave(project, m, val)}
-                                    onCancel={() => setEditingCell(null)}
-                                    formatNumber={formatNumber}
-                                    disabled={!project.includedInTotal}
-                                  />
-                                ))}
-                                <td className="px-3 py-2 text-xs text-center font-bold bg-gray-50 dark:bg-gray-900/50">{formatNumber(project.totalCapacity)}</td>
-                                <td className="px-3 py-2 text-xs text-center font-bold text-[#0B74B0] dark:text-blue-400">{formatNumber(project.cummTillOct)}</td>
-                                <td className="px-3 py-2 text-xs text-center text-gray-500">{formatNumber(project.q1)}</td>
-                                <td className="px-3 py-2 text-xs text-center text-gray-500">{formatNumber(project.q2)}</td>
-                                <td className="px-3 py-2 text-xs text-center text-gray-500">{formatNumber(project.q3)}</td>
-                                <td className="px-3 py-2 text-xs text-center text-gray-500">{formatNumber(project.q4)}</td>
-                              </tr>
-                            ))
+                            {/* Projects - with row merging for identical project groups */}
+                            {expandedSections[`${category}-${sectionName}`] && (() => {
+                              // Secondary grouping by project identity within the section
+                              const projectsByIdentity: Record<string, CommissioningProject[]> = {};
+                              sectionProjects.forEach(p => {
+                                const idKey = `${p.projectName}-${p.spv}-${p.plotLocation}`;
+                                if (!projectsByIdentity[idKey]) projectsByIdentity[idKey] = [];
+                                projectsByIdentity[idKey].push(p);
+                              });
+
+                              return Object.entries(projectsByIdentity).map(([idKey, rows], groupIdx) => {
+                                // 🛑 EXPLANATION: If user selects "All", we force 3 rows to match Excel.
+                                // If they select a specific category (like "Plan"), we only show that row.
+                                const showAll = filters.planActual === 'All' || !filters.planActual;
+                                const statusesToShow = showAll ? ['Plan', 'Rephase', 'Actual'] : [filters.planActual];
+
+                                const displayRows = statusesToShow.map(status => {
+                                  const existing = rows.find(r => r.planActual === status);
+                                  if (existing) return existing;
+
+                                  // Only create empty placeholders if we are in "Show All" mode
+                                  if (!showAll) return null;
+
+                                  return {
+                                    ...rows[0],
+                                    id: undefined,
+                                    planActual: status,
+                                    apr: 0, may: 0, jun: 0, jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, jan: 0, feb: 0, mar: 0,
+                                    totalCapacity: 0, cummTillOct: 0, q1: 0, q2: 0, q3: 0, q4: 0
+                                  } as CommissioningProject;
+                                }).filter(Boolean) as CommissioningProject[];
+
+                                return displayRows.map((project, rowIdx) => (
+                                  <tr
+                                    key={project.id || `${category}-${sectionName}-${groupIdx}-${rowIdx}`}
+                                    className={`
+                                      ${!project.includedInTotal
+                                        ? 'bg-gray-50/50 text-gray-400 dark:bg-gray-800/50 dark:text-gray-500'
+                                        : groupIdx % 2 === 0
+                                          ? 'bg-white dark:bg-gray-800'
+                                          : 'bg-gray-50 dark:bg-gray-900'}
+                                      text-gray-900 dark:text-gray-100
+                                      border-b border-gray-100 dark:border-gray-700
+                                      hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors
+                                    `}
+                                  >
+                                    {/* IDENTITY COLUMNS - RENDERED ONLY FOR THE FIRST ROW OF THE GROUP */}
+                                    {rowIdx === 0 && (
+                                      <>
+                                        <td rowSpan={displayRows.length} className="sticky left-0 z-10 bg-inherit px-2 py-2 text-xs font-bold text-gray-400 dark:text-gray-500 border-r border-gray-200 dark:border-gray-700 shadow-[2px_0_5px_rgba(0,0,0,0.05)] text-center align-middle w-[50px]">
+                                          {project.sno}
+                                        </td>
+                                        <td rowSpan={displayRows.length} className="sticky left-[50px] z-10 bg-inherit px-3 py-2 text-xs whitespace-nowrap shadow-[2px_0_5px_rgba(0,0,0,0.05)] border-r border-gray-100 dark:border-gray-700 font-bold align-middle min-w-[180px]">
+                                          {project.projectName}
+                                        </td>
+                                        <td rowSpan={displayRows.length} className="px-3 py-2 text-xs text-gray-600 dark:text-gray-400 align-middle border-r border-gray-100 dark:border-gray-800">
+                                          {project.spv}
+                                        </td>
+                                        <td rowSpan={displayRows.length} className="px-3 py-2 text-xs align-middle text-center border-r border-gray-100 dark:border-gray-800">
+                                          <span className="font-medium text-gray-500">{project.projectType}</span>
+                                        </td>
+                                        <td rowSpan={displayRows.length} className="px-3 py-2 text-xs text-gray-600 dark:text-gray-400 align-middle text-center border-r border-gray-100 dark:border-gray-800">
+                                          {project.plotLocation}
+                                        </td>
+                                        <td rowSpan={displayRows.length} className="px-2 py-2 text-xs font-bold text-gray-900 dark:text-white align-middle text-center border-r border-gray-200 dark:border-gray-700 w-[70px]">
+                                          {formatNumber(project.capacity)}
+                                        </td>
+                                      </>
+                                    )}
+
+                                    {/* DATA COLUMNS - RENDERED FOR EVERY ROW */}
+                                    <td className="px-3 py-2 text-xs border-r border-gray-100 dark:border-gray-800">
+                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${project.planActual === 'Plan' ? 'bg-slate-100 text-slate-600' :
+                                        project.planActual === 'Rephase' ? 'bg-amber-100 text-amber-700' :
+                                          'bg-green-100 text-green-700'
+                                        }`}>
+                                        {project.planActual === 'Actual' ? 'Actual/Fcst' : project.planActual}
+                                      </span>
+                                    </td>
+                                    {monthColumns.map(m => (
+                                      <EditableCell
+                                        key={m}
+                                        project={project}
+                                        field={m}
+                                        value={(project as any)[m]}
+                                        isEditing={editingCell?.projectId === project.id && editingCell?.field === m}
+                                        onEdit={() => isAdmin && project.id && setEditingCell({ projectId: project.id, field: m })}
+                                        onSave={(val) => handleCellSave(project, m, val)}
+                                        onCancel={() => setEditingCell(null)}
+                                        formatNumber={formatNumber}
+                                        disabled={!project.includedInTotal || !project.id}
+                                      />
+                                    ))}
+                                    <td className="px-3 py-2 text-xs text-center font-bold bg-gray-50/50 dark:bg-gray-900/50 border-x border-gray-100 dark:border-gray-800">{formatNumber(project.totalCapacity)}</td>
+                                    <td className="px-3 py-2 text-xs text-center font-bold text-[#0B74B0] dark:text-blue-400 border-r border-gray-100 dark:border-gray-800">{formatNumber(project.cummTillOct)}</td>
+                                    <td className="px-3 py-2 text-xs text-center text-gray-400 border-r border-gray-50 dark:border-gray-800">{formatNumber(project.q1)}</td>
+                                    <td className="px-3 py-2 text-xs text-center text-gray-400 border-r border-gray-50 dark:border-gray-800">{formatNumber(project.q2)}</td>
+                                    <td className="px-3 py-2 text-xs text-center text-gray-400 border-r border-gray-50 dark:border-gray-800">{formatNumber(project.q3)}</td>
+                                    <td className="px-3 py-2 text-xs text-center text-gray-400">{formatNumber(project.q4)}</td>
+                                  </tr>
+                                ));
+                              });
+                            })()
                             }
+
+
 
                             {/* SECTION SUB-TOTAL - Minimalist */}
                             {
-                              expandedSections[`${groupKey}-${section}`] && anyIncluded && (
+                              expandedSections[`${category}-${sectionName}`] && anyIncluded && (
                                 <tr className="bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 font-bold text-[11px]">
                                   <td colSpan={5} className="px-3 py-2 text-right text-gray-400">Section Subtotal:</td>
                                   <td className="px-3 py-2">{formatNumber(sectionTotal.capacity)}</td>
+                                  <td className="px-3 py-2"></td> {/* Empty for Plan/Actual column */}
                                   {monthColumns.map(m => <td key={m} className="px-2 py-2 text-center">{formatNumber(sectionTotal[m])}</td>)}
                                   <td className="px-3 py-2 text-center">{formatNumber(sectionTotal.totalCapacity)}</td>
                                   <td className="px-3 py-2 text-center text-[#0B74B0] dark:text-blue-400">{formatNumber(sectionTotal.cummTillOct)}</td>
@@ -1042,9 +1035,10 @@ export default function CommissioningStatusPage() {
                       {/* GROUP TOTAL - Minimalist Style */}
                       <tr className="bg-gray-100 dark:bg-gray-900 border-t border-gray-300 dark:border-gray-700 font-bold text-xs">
                         <td colSpan={5} className="px-3 py-2 text-right uppercase text-gray-500">
-                          Total {groupKey}:
+                          Total {category}:
                         </td>
                         <td className="px-3 py-2 font-bold">{formatNumber(groupTotal.capacity)}</td>
+                        <td className="px-3 py-2"></td> {/* Empty for Plan/Actual column */}
                         {monthColumns.map(m => <td key={m} className="px-2 py-2 text-center">{formatNumber(groupTotal[m])}</td>)}
                         <td className="px-3 py-2 text-center font-bold">{formatNumber(groupTotal.totalCapacity)}</td>
                         <td className="px-3 py-2 text-center text-[#0B74B0] dark:text-blue-400 font-bold">{formatNumber(groupTotal.cummTillOct)}</td>
@@ -1068,6 +1062,7 @@ export default function CommissioningStatusPage() {
                         AGEL Overall Total:
                       </td>
                       <td className="px-3 py-3 font-bold">{formatNumber(grandTotal.capacity)}</td>
+                      <td className="px-3 py-3"></td> {/* Empty for Plan/Actual column */}
                       {monthColumns.map(m => <td key={m} className="px-2 py-3 text-center">{formatNumber(grandTotal[m])}</td>)}
                       <td className="px-3 py-3 text-center font-bold">{formatNumber(grandTotal.totalCapacity)}</td>
                       <td className="px-3 py-3 text-center text-blue-400 font-bold">{formatNumber(grandTotal.cummTillOct)}</td>
@@ -1411,8 +1406,8 @@ function SummaryTable({ title, projects, monthColumns, monthLabels, formatNumber
               {monthLabels.map((m, idx) => (
                 <th key={idx} className="px-1 py-2 text-center text-[9px] font-bold text-gray-500 uppercase">{m}</th>
               ))}
-              <th className="px-1 py-2 text-center text-[9px] font-bold text-gray-500 uppercase">Total</th>
-              <th className="px-1 py-2 text-center text-[9px] font-bold text-[#0B74B0] uppercase">Cumm Oct</th>
+              <th className="px-1 py-2 text-center text-[9px] font-bold text-gray-500 uppercase">Total Capacity</th>
+              <th className="px-1 py-2 text-center text-[9px] font-bold text-[#0B74B0] uppercase">Cumm till 30-Nov-25</th>
               <th className="px-1 py-2 text-center text-[9px] font-bold text-gray-500 uppercase">Q1</th>
               <th className="px-1 py-2 text-center text-[9px] font-bold text-gray-500 uppercase">Q2</th>
               <th className="px-1 py-2 text-center text-[9px] font-bold text-gray-500 uppercase">Q3</th>
@@ -1424,7 +1419,7 @@ function SummaryTable({ title, projects, monthColumns, monthLabels, formatNumber
             {Object.entries(planData.byType).map(([type, data]) => renderRow(type, data))}
             {renderRow('Rephase', rephaseData.total, 'bg-amber-50/30 dark:bg-amber-900/10 font-bold')}
             {Object.entries(rephaseData.byType).map(([type, data]) => renderRow(type, data))}
-            {renderRow('Actual', actualData.total, 'bg-green-50/30 dark:bg-green-900/10 font-bold')}
+            {renderRow('Actual / Fcst', actualData.total, 'bg-green-50/30 dark:bg-green-900/10 font-bold')}
             {Object.entries(actualData.byType).map(([type, data]) => renderRow(type, data))}
           </tbody>
         </table>

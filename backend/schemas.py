@@ -98,8 +98,27 @@ class CommissioningSummary(BaseModel):
     
     class Config:
         extra = "allow"
-
 class CommissioningDataRequest(BaseModel):
     fiscalYear: str
     projects: List[CommissioningProject]
     summaries: List[CommissioningSummary]
+
+# Master Data Management Models
+class DropdownOptionsModel(BaseModel):
+    groups: List[str] = []
+    ppaMerchants: List[str] = []
+    types: List[str] = []
+    locationCodes: List[str] = []
+    locations: List[str] = []
+    connectivities: List[str] = []
+    sections: List[str] = []
+    categories: List[str] = []
+
+class ManualProjectRequest(BaseModel):
+    category: str
+    section: str
+    projectName: str
+    spv: str
+    projectType: str
+    capacity: float
+    fiscalYear: str

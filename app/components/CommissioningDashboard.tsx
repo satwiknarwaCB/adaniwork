@@ -99,6 +99,8 @@ export default function CommissioningDashboard() {
     const fiscalYear = 'FY_25-26';
     const [activeDashboard, setActiveDashboard] = useState<'overview' | 'solar' | 'wind' | 'models' | 'deviation'>('overview');
     const [achieveView, setAchieveView] = useState<'yearly' | 'half-yearly' | 'quarterly' | 'monthly'>('yearly');
+    const [achieveCategory, setAchieveCategory] = useState('All Categories');
+    const [achieveProject, setAchieveProject] = useState('All Projects');
     const [timelineView, setTimelineView] = useState<'yearly' | 'half-yearly' | 'quarterly' | 'monthly'>('quarterly');
     const [deviationView, setDeviationView] = useState<'yearly' | 'half-yearly' | 'quarterly' | 'monthly'>('quarterly');
 
@@ -121,24 +123,24 @@ export default function CommissioningDashboard() {
     // Local Chart States for specific card dropdowns
     const [techMixStatus, setTechMixStatus] = useState('All Projects');
     const [techMixProject, setTechMixProject] = useState('All Projects');
-    const [techMixGeography, setTechMixGeography] = useState('All Sites');
+    const [techMixCategory, setTechMixCategory] = useState('All Categories');
     const [techMixHovered, setTechMixHovered] = useState<any>(null);
 
     // Business Model Filter for charts
     const [businessModelFilter, setBusinessModelFilter] = useState('All Models');
     const [timelineBusinessModel, setTimelineBusinessModel] = useState('All Models');
-    const [timelineGeography, setTimelineGeography] = useState('All Sites');
+    const [timelineCategory, setTimelineCategory] = useState('All Categories');
 
     // Solar Dashboard specific
-    const [solarGeography, setSolarGeography] = useState('All Sites');
+    const [solarCategory, setSolarCategory] = useState('All Categories');
     const [solarBusinessModel, setSolarBusinessModel] = useState('All Models');
 
     // Wind Dashboard specific
-    const [windGeography, setWindGeography] = useState('All Sites');
+    const [windCategory, setWindCategory] = useState('All Categories');
     const [windBusinessModel, setWindBusinessModel] = useState('All Models');
 
     // Models Dashboard
-    const [modelsGeography, setModelsGeography] = useState('All Sites');
+    const [modelsCategory, setModelsCategory] = useState('All Categories');
     const [modelsTechnology, setModelsTechnology] = useState('All');
 
     // KPI scope derived from global category filter
@@ -185,17 +187,14 @@ export default function CommissioningDashboard() {
     const kpi3 = getKPIData(globalKpiScope);
     const kpi4 = getKPIData(globalKpiScope);
 
-    // Geography/Site Options based on section names
-    const geographyOptions = useMemo(() => {
-        const sites = allProjects
+    // Category Options - pulled from actual project data
+    const categoryOptions = useMemo(() => {
+        const categories = allProjects
             .filter(p => p.includedInTotal)
-            .map(p => {
-                if (p.section?.toLowerCase().includes('khavda')) return 'Khavda';
-                if (p.section?.toLowerCase().includes('rajasthan')) return 'Rajasthan';
-                if (p.section?.toLowerCase().includes('mundra')) return 'Mundra';
-                return 'Others';
-            });
-        return ['All Sites', ...Array.from(new Set(sites)).filter(s => s !== 'Others').sort(), 'Others'];
+            .map(p => p.category)
+            .filter(Boolean);
+        const uniqueCategories = Array.from(new Set(categories)).sort();
+        return ['All Categories', ...uniqueCategories];
     }, [allProjects]);
 
     // Business Model Options
@@ -213,19 +212,10 @@ export default function CommissioningDashboard() {
         return ['All SPVs', ...names];
     }, [allProjects]);
 
-    // Helper function to get geography from section
-    const getGeography = (section: string | undefined) => {
-        if (!section) return 'Others';
-        if (section.toLowerCase().includes('khavda')) return 'Khavda';
-        if (section.toLowerCase().includes('rajasthan')) return 'Rajasthan';
-        if (section.toLowerCase().includes('mundra')) return 'Mundra';
-        return 'Others';
-    };
-
-    // Helper to filter by geography
-    const filterByGeography = (projects: CommissioningProject[], geo: string) => {
-        if (geo === 'All Sites') return projects;
-        return projects.filter(p => getGeography(p.section) === geo);
+    // Helper to filter by category
+    const filterByCategory = (projects: CommissioningProject[], cat: string) => {
+        if (cat === 'All Categories') return projects;
+        return projects.filter(p => p.category === cat);
     };
 
     // Helper to filter by business model
@@ -238,10 +228,10 @@ export default function CommissioningDashboard() {
         let projs = allProjects.filter(p => p.includedInTotal);
         if (mainTimelineProject !== 'All Projects') projs = projs.filter(p => p.projectName === mainTimelineProject);
         if (mainTimelineSPV !== 'All SPVs') projs = projs.filter(p => p.spv === mainTimelineSPV);
-        projs = filterByGeography(projs, timelineGeography);
+        projs = filterByCategory(projs, timelineCategory);
         projs = filterByBusinessModel(projs, timelineBusinessModel);
         return projs;
-    }, [allProjects, mainTimelineProject, mainTimelineSPV, timelineGeography, timelineBusinessModel]);
+    }, [allProjects, mainTimelineProject, mainTimelineSPV, timelineCategory, timelineBusinessModel]);
 
 
     const halfYearlyData = useMemo(() => {
@@ -286,25 +276,52 @@ export default function CommissioningDashboard() {
     }, [filteredTimelineProjects]);
 
     const gaugeData = useMemo(() => {
-        let plan = overallKpi.plan;
-        let actual = overallKpi.actual;
-        if (achieveView !== 'yearly') {
-            const source = achieveView === 'monthly' ? monthlyData : achieveView === 'half-yearly' ? halfYearlyData : quarterlyData;
-            plan = source.reduce((s, d: any) => s + (d['PPA Plan'] || 0), 0);
-            actual = source.reduce((s, d: any) => s + (d['Actual Commissioning'] || 0), 0);
+        let projs = allProjects.filter(p => p.includedInTotal);
+        if (achieveCategory !== 'All Categories') projs = projs.filter(p => p.category === achieveCategory);
+        if (achieveProject !== 'All Projects') projs = projs.filter(p => p.projectName === achieveProject);
+
+        let plan = 0;
+        let actual = 0;
+        let periodName = 'Yearly';
+
+        // Current Period configuration based on "As on 31-Oct-25"
+        if (achieveView === 'yearly') {
+            plan = projs.filter(p => p.planActual === 'Plan').reduce((s, p) => s + (p.capacity || 0), 0);
+            actual = projs.filter(p => p.planActual === 'Actual').reduce((s, p) => s + (p.totalCapacity || 0), 0);
+            periodName = 'Full FY';
+        } else if (achieveView === 'half-yearly') {
+            // H2: Oct-Mar
+            const months = ['oct', 'nov', 'dec', 'jan', 'feb', 'mar'];
+            plan = projs.filter(p => p.planActual === 'Plan').reduce((s, p) => s + months.reduce((ms, m) => ms + ((p as any)[m] || 0), 0), 0);
+            actual = projs.filter(p => p.planActual === 'Actual').reduce((s, p) => s + months.reduce((ms, m) => ms + ((p as any)[m] || 0), 0), 0);
+            periodName = 'H2 (Oct-Mar)';
+        } else if (achieveView === 'quarterly') {
+            // Q3: Oct-Dec
+            plan = projs.filter(p => p.planActual === 'Plan').reduce((s, p) => s + (p.q3 || 0), 0);
+            actual = projs.filter(p => p.planActual === 'Actual').reduce((s, p) => s + (p.q3 || 0), 0);
+            periodName = 'Q3 (Oct-Dec)';
+        } else if (achieveView === 'monthly') {
+            // October
+            plan = projs.filter(p => p.planActual === 'Plan').reduce((s, p) => s + (p.oct || 0), 0);
+            actual = projs.filter(p => p.planActual === 'Actual').reduce((s, p) => s + (p.oct || 0), 0);
+            periodName = 'October 2025';
         }
+
         return {
+            plan,
+            actual,
+            periodName,
             achievement: plan > 0 ? (actual / plan) * 100 : 0,
             chart: [
                 { name: 'Completed', value: actual, color: '#10B981' },
-                { name: 'Remaining PPA', value: Math.max(0, plan - actual), color: '#3B82F620' },
+                { name: 'Remaining', value: Math.max(0, plan - actual), color: '#3B82F620' },
             ]
         };
-    }, [overallKpi, achieveView, monthlyData, halfYearlyData, quarterlyData]);
+    }, [allProjects, achieveView, achieveCategory, achieveProject]);
 
     const techSplitData = useMemo(() => {
         let projects = allProjects.filter(p => p.planActual === 'Plan' && p.includedInTotal);
-        projects = filterByGeography(projects, techMixGeography);
+        projects = filterByCategory(projects, techMixCategory);
         if (techMixProject !== 'All Projects') {
             projects = projects.filter(p => p.projectName === techMixProject);
         } else if (techMixStatus !== 'All Projects') {
@@ -317,19 +334,14 @@ export default function CommissioningDashboard() {
         const solar = projects.filter(p => p.category?.toLowerCase().includes('solar')).reduce((s, p) => s + (p.capacity || 0), 0);
         const wind = projects.filter(p => p.category?.toLowerCase().includes('wind')).reduce((s, p) => s + (p.capacity || 0), 0);
 
-        // Calculate geography breakdown for context
-        const khavda = projects.filter(p => getGeography(p.section) === 'Khavda').reduce((s, p) => s + (p.capacity || 0), 0);
-        const rajasthan = projects.filter(p => getGeography(p.section) === 'Rajasthan').reduce((s, p) => s + (p.capacity || 0), 0);
-        const others = projects.filter(p => !['Khavda', 'Rajasthan'].includes(getGeography(p.section))).reduce((s, p) => s + (p.capacity || 0), 0);
-
         return {
             data: [
                 { name: 'Solar', value: solar, color: '#F97316' },
                 { name: 'Wind', value: wind, color: '#06B6D4' },
             ].filter(d => d.value > 0),
-            breakdown: { khavda, rajasthan, others, total: solar + wind }
+            total: solar + wind
         };
-    }, [allProjects, techMixProject, techMixStatus, techMixGeography]);
+    }, [allProjects, techMixProject, techMixStatus, techMixCategory]);
 
 
     const modelSplitData = useMemo(() => {
@@ -533,32 +545,53 @@ export default function CommissioningDashboard() {
                         {/* Left Column - Gauge and Tech Mix */}
                         <div className="space-y-4">
                             <ChartContainer
-                                title="Overall Achievement"
-                                controls={<ViewPivot active={achieveView} onChange={setAchieveView} label="" />}
+                                title={`${achieveCategory === 'All Categories' ? 'Overall' : achieveCategory} Achievement`}
+                                controls={
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <CardSelect label="" options={categoryOptions} value={achieveCategory} onChange={setAchieveCategory} />
+                                        <CardSelect label="" options={projectOptions} value={achieveProject} onChange={setAchieveProject} />
+                                        <div className="hidden sm:block w-px h-6 bg-gray-200 dark:bg-gray-700" />
+                                        <ViewPivot active={achieveView} onChange={setAchieveView} label="" />
+                                    </div>
+                                }
                             >
+                                <div className="mb-2 text-center">
+                                    <span className="text-[10px] font-bold text-[#0B74B0] dark:text-blue-400 uppercase tracking-widest bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full border border-blue-100 dark:border-blue-800 shadow-sm inline-block">
+                                        {gaugeData.periodName} Target: {gaugeData.plan.toLocaleString()} MW
+                                    </span>
+                                </div>
                                 <div className="h-[180px] relative">
                                     <ResponsiveContainer width="100%" height="100%">
                                         <PieChart>
                                             <Pie data={gaugeData.chart} innerRadius={60} outerRadius={80} paddingAngle={2} dataKey="value" stroke="none">
                                                 {gaugeData.chart.map((e, i) => <Cell key={i} fill={e.color} style={{ filter: 'url(#shadow)' }} />)}
                                             </Pie>
-                                            <Tooltip
-                                                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
-                                                formatter={(v: any) => `${v.toLocaleString()} MW`}
-                                            />
                                         </PieChart>
                                     </ResponsiveContainer>
-                                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                        <span className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white">{gaugeData.achievement.toFixed(1)}%</span>
-                                        <span className="text-[10px] font-semibold text-gray-400 uppercase">Achievement</span>
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none p-4 text-center">
+                                        <div className="flex flex-col items-center leading-tight">
+                                            <span className="text-3xl font-black text-[#1F2937] dark:text-white">
+                                                {gaugeData.achievement.toFixed(1)}
+                                                <span className="text-sm ml-0.5 font-bold text-gray-400">%</span>
+                                            </span>
+                                            <span className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] mt-0.5">Achievement</span>
+                                        </div>
+                                        <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-800 w-24 flex flex-col items-center">
+                                            <span className="text-[12px] font-bold text-[#10B981]">{gaugeData.actual.toLocaleString()} MW</span>
+                                            <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">Actually Achieved</span>
+                                        </div>
                                     </div>
                                 </div>
                             </ChartContainer>
 
                             <ChartContainer
-                                title="Technology Mix"
+                                title={`${techMixCategory === 'All Categories' ? 'Overall' : techMixCategory} Technology Mix`}
                                 controls={
-                                    <CardSelect label="" options={geographyOptions} value={techMixGeography} onChange={setTechMixGeography} />
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <CardSelect label="" options={categoryOptions} value={techMixCategory} onChange={setTechMixCategory} />
+                                        <CardSelect label="" options={projectOptions} value={techMixProject} onChange={setTechMixProject} />
+                                        <CardSelect label="" options={businessModelOptions} value={businessModelFilter} onChange={setBusinessModelFilter} />
+                                    </div>
                                 }
                             >
                                 <div className="h-[160px] relative">
@@ -591,7 +624,7 @@ export default function CommissioningDashboard() {
                                     </ResponsiveContainer>
                                     <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                                         <span className="text-xl font-bold text-gray-800 dark:text-white leading-none">
-                                            {(techMixHovered ? techMixHovered.value : techSplitData.breakdown.total).toLocaleString()}
+                                            {(techMixHovered ? techMixHovered.value : techSplitData.total).toLocaleString()}
                                         </span>
                                         <span className="text-[8px] font-semibold text-gray-400 uppercase mt-0.5">
                                             {techMixHovered ? techMixHovered.name : "Total MW"}
@@ -601,7 +634,7 @@ export default function CommissioningDashboard() {
                                 {/* Technology breakdown */}
                                 <div className="flex justify-center gap-4 mt-2">
                                     {techSplitData.data.map(d => {
-                                        const perc = techSplitData.breakdown.total > 0 ? (d.value / techSplitData.breakdown.total) * 100 : 0;
+                                        const perc = techSplitData.total > 0 ? (d.value / techSplitData.total) * 100 : 0;
                                         return (
                                             <div
                                                 key={d.name}
@@ -627,7 +660,7 @@ export default function CommissioningDashboard() {
                                 title={timelineView === 'monthly' ? "Monthly Timeline" : timelineView === 'quarterly' ? "Quarterly Performance" : timelineView === 'half-yearly' ? "Half-Yearly View" : "Annual Summary"}
                                 controls={
                                     <div className="flex flex-wrap items-center gap-2">
-                                        <CardSelect label="" options={geographyOptions} value={timelineGeography} onChange={setTimelineGeography} />
+                                        <CardSelect label="" options={categoryOptions} value={timelineCategory} onChange={setTimelineCategory} />
                                         <CardSelect label="" options={businessModelOptions} value={timelineBusinessModel} onChange={setTimelineBusinessModel} />
                                         <CardSelect label="" options={projectOptions} value={mainTimelineProject} onChange={setMainTimelineProject} />
                                         <CardSelect label="" options={spvOptions} value={mainTimelineSPV} onChange={setMainTimelineSPV} />
@@ -641,7 +674,7 @@ export default function CommissioningDashboard() {
                                     <span className="bg-gray-100 dark:bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded font-medium">FY {selectedFY}</span>
                                     <span className="bg-gray-100 dark:bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded font-medium">{categoryFilter === 'all' ? 'Solar + Wind' : categoryFilter}</span>
                                     <span className="bg-gray-100 dark:bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded font-medium">{timelineBusinessModel}</span>
-                                    <span className="bg-gray-100 dark:bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded font-medium">{timelineGeography}</span>
+                                    <span className="bg-gray-100 dark:bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded font-medium">{timelineCategory}</span>
                                 </div>
 
                                 <ResponsiveContainer width="100%" height={350}>
@@ -667,7 +700,7 @@ export default function CommissioningDashboard() {
                                                                 </div>
                                                             ))}
                                                             <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 text-[9px] text-gray-400 font-bold uppercase">
-                                                                {timelineGeography} | {timelineBusinessModel} | FY {selectedFY}
+                                                                {timelineCategory} | {timelineBusinessModel} | FY {selectedFY}
                                                             </div>
                                                         </div>
                                                     );
@@ -695,7 +728,7 @@ export default function CommissioningDashboard() {
                                 Solar Portfolio Analysis
                             </h3>
                             <div className="flex flex-wrap gap-2">
-                                <CardSelect label="Site" options={geographyOptions} value={solarGeography} onChange={setSolarGeography} />
+                                <CardSelect label="Category" options={categoryOptions} value={solarCategory} onChange={setSolarCategory} />
                                 <CardSelect label="Model" options={businessModelOptions} value={solarBusinessModel} onChange={setSolarBusinessModel} />
                                 <MultiSlicer label="Projects" options={SECTION_OPTIONS.filter(s => s.label.includes('Solar'))} selected={selectedSections} onChange={setSelectedSections} />
                             </div>
@@ -729,7 +762,7 @@ export default function CommissioningDashboard() {
                                 {solarBusinessModel === 'All Models' ? 'All Models' : solarBusinessModel}
                             </span>
                             <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">
-                                {solarGeography === 'All Sites' ? 'All Sites' : solarGeography}
+                                {solarCategory === 'All Categories' ? 'All Categories' : solarCategory}
                             </span>
                         </div>
 
@@ -811,7 +844,7 @@ export default function CommissioningDashboard() {
                                 Wind Portfolio Analysis
                             </h3>
                             <div className="flex flex-wrap gap-2">
-                                <CardSelect label="Site" options={geographyOptions} value={windGeography} onChange={setWindGeography} />
+                                <CardSelect label="Category" options={categoryOptions} value={windCategory} onChange={setWindCategory} />
                                 <CardSelect label="Model" options={businessModelOptions} value={windBusinessModel} onChange={setWindBusinessModel} />
                                 <MultiSlicer label="Projects" options={SECTION_OPTIONS.filter(s => s.label.includes('Wind'))} selected={selectedSections} onChange={setSelectedSections} />
                             </div>
@@ -845,7 +878,7 @@ export default function CommissioningDashboard() {
                                 {windBusinessModel === 'All Models' ? 'All Models' : windBusinessModel}
                             </span>
                             <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">
-                                {windGeography === 'All Sites' ? 'All Sites' : windGeography}
+                                {windCategory === 'All Categories' ? 'All Categories' : windCategory}
                             </span>
                         </div>
 
@@ -930,7 +963,7 @@ export default function CommissioningDashboard() {
                                 </h3>
                                 <div className="flex flex-wrap gap-2">
                                     <GlobalSlicer label="Technology" options={['All', 'Solar', 'Wind']} value={modelsTechnology} onChange={setModelsTechnology} />
-                                    <CardSelect label="Site" options={geographyOptions} value={modelsGeography} onChange={setModelsGeography} />
+                                    <CardSelect label="Category" options={categoryOptions} value={modelsCategory} onChange={setModelsCategory} />
                                 </div>
                             </div>
                             {/* Filter Tags */}
@@ -940,7 +973,7 @@ export default function CommissioningDashboard() {
                                     {modelsTechnology === 'All' ? 'Solar + Wind' : modelsTechnology}
                                 </span>
                                 <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">
-                                    {modelsGeography === 'All Sites' ? 'All Sites' : modelsGeography}
+                                    {modelsCategory === 'All Categories' ? 'All Categories' : modelsCategory}
                                 </span>
                             </div>
 
@@ -997,7 +1030,7 @@ export default function CommissioningDashboard() {
                                 <div className="flex flex-wrap gap-2">
                                     <GlobalSlicer label="Technology" options={['All', 'Solar', 'Wind']} value={categoryFilter === 'all' ? 'All' : categoryFilter === 'solar' ? 'Solar' : 'Wind'} onChange={(v: string) => setCategoryFilter(v.toLowerCase() as any)} />
                                     <CardSelect label="Model" options={businessModelOptions} value={timelineBusinessModel} onChange={setTimelineBusinessModel} />
-                                    <CardSelect label="Site" options={geographyOptions} value={timelineGeography} onChange={setTimelineGeography} />
+                                    <CardSelect label="Category" options={categoryOptions} value={timelineCategory} onChange={setTimelineCategory} />
                                 </div>
                             </div>
 
@@ -1033,7 +1066,7 @@ export default function CommissioningDashboard() {
                                     {timelineBusinessModel === 'All Models' ? 'All Models' : timelineBusinessModel}
                                 </span>
                                 <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">
-                                    {timelineGeography === 'All Sites' ? 'All Sites' : timelineGeography}
+                                    {timelineCategory === 'All Categories' ? 'All Categories' : timelineCategory}
                                 </span>
                             </div>
 
@@ -1066,7 +1099,7 @@ export default function CommissioningDashboard() {
                                                                 {val >= 0 ? 'Ahead of Schedule' : 'Action Required'}
                                                             </p>
                                                             <p className="text-[9px] text-gray-400 mt-2 border-t pt-2">
-                                                                {categoryFilter === 'all' ? 'All Technologies' : categoryFilter} | {timelineBusinessModel} | {timelineGeography}
+                                                                {categoryFilter === 'all' ? 'All Technologies' : categoryFilter} | {timelineBusinessModel} | {timelineCategory}
                                                             </p>
                                                         </div>
                                                     );
@@ -1165,7 +1198,7 @@ export default function CommissioningDashboard() {
                     </div>
                 )}
             </div>
-        </div>
+        </div >
     );
 }
 

@@ -24,26 +24,17 @@ interface CommissioningProject {
 export default function ChatbotPanel() {
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState([
-        { role: 'assistant', content: 'Hello! I am your AGEL AI Analyst. How can I help you extract insights from the FY 25-26 commissioning data today?' }
+        { role: 'assistant', content: 'Hello! I am your AGEL Data Assistant. How can I help you navigate the dashboard today?' }
     ]);
 
-    // Fetch Data for Context
-    const fiscalYear = 'FY_25-26';
-    const { data: allProjects = [] } = useQuery<CommissioningProject[]>({
-        queryKey: ['commissioningProjects', fiscalYear],
-        queryFn: async () => {
-            const response = await fetch(`/api/commissioning-projects?fiscalYear=${fiscalYear}`);
-            if (!response.ok) throw new Error('Failed to fetch projects');
-            return response.json();
-        },
-        staleTime: 1000 * 60 * 5 // 5 minutes
-    });
-
     const suggestions = [
-        "What is the total solar capacity achieved?",
-        "Show me lagging projects in Khavda.",
-        "Compare Q2 Plan vs Actual.",
-        "Summarize Wind performance."
+        "What is the current FY target?",
+        "How many projects are critical?",
+        "How do I filter solar projects?",
+        "Where can I see the Wind totals?",
+        "Can I filter by SPV?",
+        "How do I export this data?",
+        "What is Included in Total?"
     ];
 
     const [inputValue, setInputValue] = useState('');
@@ -67,59 +58,36 @@ export default function ChatbotPanel() {
         setInputValue('');
         setIsLoading(true);
 
-        // Prepare Context
-        const validProjects = allProjects.filter(p => p.includedInTotal);
+        // DELAY TO SIMULATE PROCESSING
+        setTimeout(() => {
+            let response = "";
+            const query = text.toLowerCase();
 
-        const summary = {
-            totalPlan: validProjects.filter(p => p.planActual === 'Plan').reduce((s, p) => s + (p.capacity || 0), 0),
-            totalActual: validProjects.filter(p => p.planActual === 'Actual').reduce((s, p) => s + (p.totalCapacity || 0), 0),
-            projectCount: new Set(validProjects.map(p => p.projectName)).size
-        };
-
-        const simplifiedProjects = validProjects
-            .filter(p => p.planActual === 'Plan')
-            .map(p => {
-                const actual = validProjects.find(ap => ap.projectName === p.projectName && ap.planActual === 'Actual');
-                return {
-                    name: p.projectName,
-                    category: p.category,
-                    location: p.section,
-                    capacity: p.capacity,
-                    actual: actual?.totalCapacity || 0,
-                    diff: (actual?.totalCapacity || 0) - p.capacity,
-                    status: (actual?.totalCapacity || 0) >= p.capacity ? 'Completed' : 'On-Going'
-                };
-            });
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/chat`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    message: text,
-                    context: {
-                        summary: summary,
-                        projects: simplifiedProjects
-                    }
-                })
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.detail || `Server error: ${response.status}`);
+            if (query.includes("filter")) {
+                response = "You can use the dropdowns at the top of the dashboard to filter by Category, Business Model, or Project Status.";
+            } else if (query.includes("solar")) {
+                response = "The Solar dashboard shows Khavda and Rajasthan projects. The Summary cards at the top show the total capacity for Solar Section A, B, and C.";
+            } else if (query.includes("wind")) {
+                response = "Wind projects from Khavda and Mundra (Sections A and C) are included in the overall totals.";
+            } else if (query.includes("export") || query.includes("download")) {
+                response = "Use the 'Export to Excel' button on the Commissioning Status page to download the current table data.";
+            } else if (query.includes("include") || query.includes("total")) {
+                response = "Projects marked with 'Included in Total' contribute to the CEO gauges. Other merchant or internal projects (Sections D1, D2 etc.) are shown for visibility but don't affect the target achievement.";
+            } else if (query.includes("target") || query.includes("fy target")) {
+                response = "The FY 2025-26 target is determined by the total PPA Plan capacity of all projects marked 'Included in Total'. This target is visible in the Achievement Gauge header.";
+            } else if (query.includes("critical") || query.includes("behind")) {
+                response = "Critical projects are those where 'Actual' commissioning is less than the 'Plan'. You can view a ranked list of these in the 'Deviation Analysis' tab.";
+            } else if (query.includes("spv")) {
+                response = "Yes, you can drill down by SPV in the 'Quarterly Performance' chart controls or manage the SPV list in the 'Master Data' section.";
+            } else if (query.includes("difference") || query.includes("split")) {
+                response = "The 'Technology Mix' chart provides a side-by-side comparison of Solar vs. Wind capacity, showing both the MW value and percentage split.";
+            } else {
+                response = "I am currently in Offline Mode for data security. I can help with dashboard navigation and layout questions!";
             }
 
-            const data = await response.json();
-            setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
-        } catch (error: any) {
-            console.error("Chat Error:", error);
-            setMessages(prev => [...prev, {
-                role: 'assistant',
-                content: `Error: ${error.message || "Could not connect to the backend brain"}. Please ensure the backend server is running on port 8002.`
-            }]);
-        } finally {
+            setMessages(prev => [...prev, { role: 'assistant', content: response }]);
             setIsLoading(false);
-        }
+        }, 800);
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -160,8 +128,8 @@ export default function ChatbotPanel() {
                                     </svg>
                                 </div>
                                 <div>
-                                    <h4 className="text-white font-black leading-none">AGEL AI Analyst</h4>
-                                    <p className="text-blue-100 text-[10px] font-bold uppercase tracking-widest mt-1">Real-time Insights (Mistral)</p>
+                                    <h4 className="text-white font-black leading-none">AGEL Data Assistant</h4>
+                                    <p className="text-blue-100 text-[10px] font-bold uppercase tracking-widest mt-1">Dashboard Support</p>
                                 </div>
                             </div>
                             <button onClick={() => setIsOpen(false)} className="text-white/60 hover:text-white transition-colors">

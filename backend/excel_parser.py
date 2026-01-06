@@ -149,6 +149,16 @@ def parse_summary_sheet(df: pd.DataFrame, sheet_name: str) -> tuple:
     current_section = None
     included_in_total = True
     
+    # STICKY PROJECT IDENTITY for merged cells
+    last_project_identity = {
+        'sno': 0,
+        'project_name': '',
+        'spv': '',
+        'project_type': '',
+        'plot_location': '',
+        'capacity': 0
+    }
+    
     print(f"DEBUG: Parsing sheet '{sheet_name}' with {len(df)} rows")
     
     for idx, row in df.iterrows():
@@ -159,7 +169,6 @@ def parse_summary_sheet(df: pd.DataFrame, sheet_name: str) -> tuple:
             row_text = f"{text_0} {text_1}"
             
             # 🛑 SKIP SUBTOTAL AND TOTAL ROWS
-            # We want the website to calculate these itself.
             skip_keywords = ['Subtotal', 'Total', 'Overall', 'Grand Total', 'Chairman Plan']
             if any(key.lower() in row_text.lower() for key in skip_keywords):
                 print(f"DEBUG: Skipping aggregate row at {idx}: {row_text}")
@@ -179,37 +188,77 @@ def parse_summary_sheet(df: pd.DataFrame, sheet_name: str) -> tuple:
                 continue
                 
             # Check if this is a project row (has Plan/Rephase/Actual)
-            # Try to find Plan/Actual in col 8
-            sno_val = row.iloc[SUMMARY_COLS['sno']]
             plan_actual_val = row.iloc[SUMMARY_COLS['plan_actual']]
-            
-            sno = sno_val if pd.notna(sno_val) else None
             plan_actual = str(plan_actual_val).strip() if pd.notna(plan_actual_val) else ''
             
             # Normalized values we accept
-            valid_types = ['Plan', 'Rephase', 'Actual / Fcst', 'Actual']
-            if plan_actual not in valid_types:
+            if 'plan' in plan_actual.lower():
+                plan_actual = 'Plan'
+            elif 'rephase' in plan_actual.lower():
+                plan_actual = 'Rephase'
+            elif 'actual' in plan_actual.lower():
+                plan_actual = 'Actual'
+            else:
                 continue
             
-            # 🛑 Additional check to ensure it's a project row and not a category subtotal
-            proj_name = str(row.iloc[SUMMARY_COLS['project_name']]).strip() if pd.notna(row.iloc[SUMMARY_COLS['project_name']]) else ''
+            # Get current row's project identity (may be empty if merged)
+            current_name = str(row.iloc[SUMMARY_COLS['project_name']]).strip() if pd.notna(row.iloc[SUMMARY_COLS['project_name']]) else ''
+            current_spv = str(row.iloc[SUMMARY_COLS['spv']]).strip() if pd.notna(row.iloc[SUMMARY_COLS['spv']]) else ''
+            current_type = str(row.iloc[SUMMARY_COLS['type']]).strip() if pd.notna(row.iloc[SUMMARY_COLS['type']]) else ''
+            current_location = str(row.iloc[SUMMARY_COLS['plot_location']]).strip() if pd.notna(row.iloc[SUMMARY_COLS['plot_location']]) else ''
+            current_capacity = safe_float(row.iloc[SUMMARY_COLS['capacity']])
+            
+            # Get S.No
+            sno_val = row.iloc[SUMMARY_COLS['sno']]
+            try:
+                if pd.isna(sno_val) or str(sno_val).strip() == '':
+                    sno = 0
+                else:
+                    sno = int(float(sno_val))
+            except:
+                sno = 0
+            
+            # 🛑 STICKY LOGIC: If this is a Plan row with a name, update the sticky identity
+            if plan_actual == 'Plan' and current_name:
+                last_project_identity = {
+                    'sno': sno if sno else last_project_identity['sno'],
+                    'project_name': current_name,
+                    'spv': current_spv if current_spv else last_project_identity['spv'],
+                    'project_type': current_type if current_type else last_project_identity['project_type'],
+                    'plot_location': current_location if current_location else last_project_identity['plot_location'],
+                    'capacity': current_capacity if current_capacity else last_project_identity['capacity']
+                }
+            
+            # Use sticky identity if current row has empty name (merged cell)
+            if not current_name:
+                proj_name = last_project_identity['project_name']
+                proj_spv = last_project_identity['spv']
+                proj_type = last_project_identity['project_type']
+                proj_location = last_project_identity['plot_location']
+                proj_capacity = last_project_identity['capacity']
+                proj_sno = last_project_identity['sno']
+            else:
+                proj_name = current_name
+                proj_spv = current_spv
+                proj_type = current_type
+                proj_location = current_location
+                proj_capacity = current_capacity
+                proj_sno = sno
+            
+            # Skip if still no name
             if not proj_name or any(key in proj_name for key in ['Summary', 'Total', 'Subtotal']):
                 continue
 
             print(f"DEBUG: Found Project Row at {idx}: {proj_name} [{plan_actual}]")
             
-            # Normalize plan_actual
-            if 'Actual' in plan_actual:
-                plan_actual = 'Actual'
-            
             # Extract project data
             project = {
-                'sno': int(sno) if sno and str(sno).replace('.', '').isdigit() else None,
-                'project_name': str(row.iloc[SUMMARY_COLS['project_name']]).strip() if pd.notna(row.iloc[SUMMARY_COLS['project_name']]) else '',
-                'spv': str(row.iloc[SUMMARY_COLS['spv']]).strip() if pd.notna(row.iloc[SUMMARY_COLS['spv']]) else '',
-                'project_type': str(row.iloc[SUMMARY_COLS['type']]).strip() if pd.notna(row.iloc[SUMMARY_COLS['type']]) else '',
-                'plot_location': str(row.iloc[SUMMARY_COLS['plot_location']]).strip() if pd.notna(row.iloc[SUMMARY_COLS['plot_location']]) else '',
-                'capacity': safe_float(row.iloc[SUMMARY_COLS['capacity']]),
+                'sno': proj_sno,
+                'project_name': proj_name,
+                'spv': proj_spv,
+                'project_type': proj_type,
+                'plot_location': proj_location,
+                'capacity': proj_capacity,
                 'plan_actual': plan_actual,
                 'category': current_category,
                 'section': current_section,
@@ -235,9 +284,7 @@ def parse_summary_sheet(df: pd.DataFrame, sheet_name: str) -> tuple:
                 'q4': safe_float(row.iloc[SUMMARY_COLS['q4']]),
             }
             
-            # Only add if we have some data
-            if project['project_name'] or project['sno']:
-                projects.append(project)
+            projects.append(project)
                 
         except Exception as e:
             errors.append(f"Row {idx} in {sheet_name}: {str(e)}")
@@ -331,11 +378,12 @@ def import_projects_to_db(projects: List[Dict], summaries: List[Dict] = None, fi
             status = str(proj.get('plan_actual', '')).strip()
             section = str(proj.get('section', '')).strip()
             category = str(proj.get('category', '')).strip()
+            location = str(proj.get('plot_location', '')).strip()
             
             if not name or not status:
                 continue
                 
-            key = (name, spv, status, section, category)
+            key = (name, spv, status, section, category, location)
             
             # If we see the same project, we keep the one with most values
             if key not in unique_projects:

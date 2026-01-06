@@ -4,6 +4,5 @@ pydantic
 python-multipart
 bcrypt
 PyJWT
-openai
 pandas
 python-dotenv
