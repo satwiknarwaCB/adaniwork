@@ -224,6 +224,23 @@ export async function importProjectsToDb(projects: any[], fiscalYear: string = '
 
     const finalProjects = Array.from(unique.values());
 
+    // Extract unique values for dropdown options
+    const categoriesSet = new Set<string>();
+    const typesSet = new Set<string>();
+    const spvsSet = new Set<string>();
+    const sectionsSet = new Set<string>();
+
+    finalProjects.forEach(p => {
+        // We only want the high level category (Solar/Wind) for the tabs
+        if (p.category.toLowerCase().includes('solar')) categoriesSet.add('Solar');
+        else if (p.category.toLowerCase().includes('wind')) categoriesSet.add('Wind');
+        else categoriesSet.add(p.category);
+
+        typesSet.add(p.projectType);
+        spvsSet.add(p.spv);
+        sectionsSet.add(p.category); // Using the full category name as the section dropdown value
+    });
+
     await prisma.$transaction([
         prisma.commissioningProject.deleteMany({ where: { fiscalYear } }),
         prisma.commissioningProject.createMany({
@@ -247,6 +264,16 @@ export async function importProjectsToDb(projects: any[], fiscalYear: string = '
                 cummTillOct: p.cummTillOct,
                 q1: p.q1, q2: p.q2, q3: p.q3, q4: p.q4
             }))
+        }),
+        // Update Dropdown Options
+        prisma.dropdownOption.deleteMany({ where: { fiscalYear } }),
+        prisma.dropdownOption.createMany({
+            data: [
+                ...Array.from(categoriesSet).map(c => ({ optionType: 'categories', optionValue: c, fiscalYear })),
+                ...Array.from(typesSet).map(t => ({ optionType: 'types', optionValue: t, fiscalYear })),
+                ...Array.from(spvsSet).map(s => ({ optionType: 'spv', optionValue: s, fiscalYear })),
+                ...Array.from(sectionsSet).map(s => ({ optionType: 'sections', optionValue: s, fiscalYear }))
+            ]
         })
     ]);
 

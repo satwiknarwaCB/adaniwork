@@ -113,16 +113,9 @@ const SECTION_INCLUSION_RULES: Record<string, boolean> = {
   'D. Mundra Wind Internal 224.4MW': false,
 };
 
-const getSectionDisplayName = (section: string, category: string = ''): string => {
-  if (category.toLowerCase().includes('wind')) {
-    if (section === 'A') return 'A. Khavda Wind Projects';
-    if (section === 'B') return 'B. Khavda Wind Internal 421MW (Excluded)';
-    if (section === 'C') return 'C. Mundra Wind 76MW';
-    if (section === 'D') return 'D. Mundra Wind Internal 224.4MW (Excluded)';
-  }
+const getSectionDisplayName = (section: string): string => {
   return sectionDisplayNames[section] || `Section ${section}`;
 };
-
 
 // Hierarchy Definition
 const HIERARCHY = {
@@ -142,7 +135,7 @@ const HIERARCHY = {
     bgLight: 'bg-cyan-50 dark:bg-gray-800/80',
     borderColor: 'border-cyan-200 dark:border-cyan-500',
     textColor: 'text-cyan-900 dark:text-cyan-100',
-    sections: ['A', 'B', 'C', 'D']
+    sections: ['A', 'C', 'D', 'B']
   }
 };
 
@@ -216,10 +209,12 @@ export default function CommissioningStatusPage() {
     }
   });
 
-  const categories = (masterData?.categories && masterData.categories.length > 0)
-    ? masterData.categories
-    : ['Solar', 'Wind'];
-
+  const categories = useMemo(() => {
+    if (masterData?.categories && masterData.categories.length > 0) {
+      return masterData.categories;
+    }
+    return ['Solar', 'Wind'];
+  }, [masterData]);
 
   // Save projects mutation
   const saveProjectsMutation = useMutation({
@@ -750,94 +745,30 @@ export default function CommissioningStatusPage() {
         </div>
       )}
 
-      {/* PDF-Style Summary Tables - Comprehensive Executive Summary */}
+      {/* PDF-Style Summary Tables - Only show when no specific section/category is selected */}
       {activeTab === 'overview' && !filters.section && !filters.category && (
-        <div className="space-y-8 mb-12">
-          {/* 1. AGEL Overall FY Summary (Grand Total) */}
-          <SummaryTable
-            title={`AGEL Overall FY 2025-26 (1 + 2)`}
-            projects={projects.filter((p: CommissioningProject) => p.includedInTotal)}
+        <div className="space-y-6">
+          {categories.map((cat: string, idx: number) => (
+            <SummaryTable
+              key={cat}
+              title={`${idx + 1}. AGEL Overall ${cat} FY 2025-26`}
+              projects={projects.filter((p: CommissioningProject) =>
+                p.category.toLowerCase().includes(cat.toLowerCase()) && p.includedInTotal
+              )}
+              monthColumns={monthColumns}
+              monthLabels={monthLabels}
+              formatNumber={formatNumber}
+            />
+          ))}
 
+          {/* AGEL Overall FY Summary (All Categories) */}
+          <SummaryTable
+            title={`AGEL Overall FY 2025-26 ${categories.length > 0 ? `(${categories.map((_: string, i: number) => i + 1).join(' + ')})` : ''}`}
+            projects={projects.filter((p: CommissioningProject) => p.includedInTotal)}
             monthColumns={monthColumns}
             monthLabels={monthLabels}
             formatNumber={formatNumber}
           />
-
-          <div className="grid grid-cols-1 gap-8">
-            {/* 1. Solar Overall */}
-            <div className="space-y-4">
-              <SummaryTable
-                title={`1. AGEL Overall Solar FY 2025-26 (A + B + C)`}
-                projects={projects.filter((p: CommissioningProject) =>
-                  p.category.toLowerCase().includes('solar') && p.includedInTotal
-                )}
-                monthColumns={monthColumns}
-                monthLabels={monthLabels}
-                formatNumber={formatNumber}
-              />
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {HIERARCHY.SOLAR.sections.map(secCode => {
-                  const secProjects = projects.filter((p: CommissioningProject) =>
-                    p.section === secCode && p.category.toLowerCase().includes('solar')
-                  );
-
-                  if (secProjects.length === 0) return null;
-                  const isExcluded = !secProjects.some((p: CommissioningProject) => p.includedInTotal);
-
-
-                  return (
-                    <SummaryTable
-                      key={`sum-solar-${secCode}`}
-                      title={`${secCode}. ${isExcluded ? '(Excluded) ' : ''}Subtotal (${getSectionDisplayName(secCode, 'Solar')})`}
-
-                      projects={secProjects}
-                      monthColumns={monthColumns}
-                      monthLabels={monthLabels}
-                      formatNumber={formatNumber}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 2. Wind Overall */}
-            <div className="space-y-4">
-              <SummaryTable
-                title={`2. AGEL Overall Wind FY 2025-26 (A + C)`}
-                projects={projects.filter((p: CommissioningProject) =>
-                  p.category.toLowerCase().includes('wind') && p.includedInTotal
-                )}
-                monthColumns={monthColumns}
-                monthLabels={monthLabels}
-                formatNumber={formatNumber}
-              />
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {HIERARCHY.WIND.sections.map(secCode => {
-                  const secProjects = projects.filter((p: CommissioningProject) =>
-                    p.section === secCode && p.category.toLowerCase().includes('wind')
-                  );
-
-                  if (secProjects.length === 0) return null;
-                  const isExcluded = !secProjects.some((p: CommissioningProject) => p.includedInTotal);
-
-
-                  return (
-                    <SummaryTable
-                      key={`sum-wind-${secCode}`}
-                      title={`${secCode}. ${isExcluded ? '(Excluded) ' : ''}Subtotal (${getSectionDisplayName(secCode, 'Wind')})`}
-
-                      projects={secProjects}
-                      monthColumns={monthColumns}
-                      monthLabels={monthLabels}
-                      formatNumber={formatNumber}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          </div>
         </div>
       )}
 
@@ -917,35 +848,35 @@ export default function CommissioningStatusPage() {
             <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800">
               {tabProjects.length === 0 ? (
                 <tr>
-                  <td colSpan={24} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={20} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
                     No projects found matching the current filters.
                   </td>
                 </tr>
               ) : (
-                Object.entries(HIERARCHY).map(([hierarchyKey, groupConfig]) => {
-                  const groupProjects = tabProjects.filter((p: CommissioningProject) => p.category.toLowerCase().includes(groupConfig.key.toLowerCase()));
-                  if (groupProjects.length === 0) return null;
+                Object.entries(groupedProjects).map(([category, sections]) => {
+                  // Determine group config based on category name
+                  const groupConfig = category.toLowerCase().includes('solar') ? HIERARCHY.SOLAR : HIERARCHY.WIND;
 
-                  // Calculate group totals
-                  const groupTotal = calculateTotals(groupProjects.filter((p: CommissioningProject) => p.includedInTotal));
-                  const category = groupConfig.key;
+                  // Calculate group totals (e.g., Solar Total, Wind Total)
+                  const allGroupProjects = Object.values(sections).flat().filter(p => p.includedInTotal);
+                  const groupTotal = calculateTotals(allGroupProjects);
 
                   return (
-                    <React.Fragment key={`group-${hierarchyKey}`}>
-                      {/* Major Group Header */}
-                      <tr className="bg-gray-100 dark:bg-gray-800 border-y-2 border-gray-300 dark:border-gray-700">
-                        <td colSpan={24} className={`px-4 py-2.5 text-xs font-black uppercase tracking-[0.2em] border-l-8 ${hierarchyKey === 'SOLAR' ? 'border-l-orange-500 text-orange-900 dark:text-orange-100' : 'border-l-cyan-500 text-cyan-900 dark:text-cyan-100'}`}>
+                    <React.Fragment key={`group-${category}`}>
+                      {/* Major Group Header - Minimal Style */}
+                      <tr className="bg-gray-50 dark:bg-gray-800 border-y border-gray-200 dark:border-gray-700">
+                        <td colSpan={24} className="px-4 py-2 text-xs font-bold text-gray-800 dark:text-white uppercase tracking-wider">
                           {groupConfig.title}
                         </td>
                       </tr>
 
-                      {/* Sections within this hierarchy group */}
-                      {groupConfig.sections.map(sectionName => {
-                        const sectionProjects = groupProjects.filter((p: CommissioningProject) => p.section === sectionName);
+                      {/* Iterate Sections present in data */}
+                      {Object.keys(sections).sort().map(sectionName => {
+                        const sectionProjects = sections[sectionName] || [];
                         if (sectionProjects.length === 0) return null;
 
-                        const sectionTotal = calculateTotals(sectionProjects.filter((p: CommissioningProject) => p.includedInTotal));
-                        const anyIncluded = sectionProjects.some((p: CommissioningProject) => p.includedInTotal);
+                        const sectionTotal = calculateTotals(sectionProjects);
+                        const anyIncluded = sectionProjects.some(p => p.includedInTotal);
 
                         return (
                           <React.Fragment key={`sec-${category}-${sectionName}`}>
@@ -962,9 +893,8 @@ export default function CommissioningStatusPage() {
                                       </svg>
                                     </span>
                                     <span className={`w-2 h-2 rounded-full ${category.toLowerCase().includes('solar') ? 'bg-orange-500' : 'bg-cyan-500'}`}></span>
-                                    {getSectionDisplayName(sectionName, category)}
+                                    {getSectionDisplayName(sectionName)}
                                     {!anyIncluded && (
-
                                       <span className="px-2 py-0.5 text-xs bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-300 rounded-full border border-gray-300 dark:border-gray-500 uppercase tracking-wider">
                                         Excluded (Display Only)
                                       </span>
@@ -986,7 +916,7 @@ export default function CommissioningStatusPage() {
                             {expandedSections[`${category}-${sectionName}`] && (() => {
                               // Secondary grouping by project identity within the section
                               const projectsByIdentity: Record<string, CommissioningProject[]> = {};
-                              sectionProjects.forEach((p: CommissioningProject) => {
+                              sectionProjects.forEach(p => {
                                 const idKey = `${p.projectName}-${p.spv}-${p.plotLocation}`;
                                 if (!projectsByIdentity[idKey]) projectsByIdentity[idKey] = [];
                                 projectsByIdentity[idKey].push(p);
@@ -1087,6 +1017,8 @@ export default function CommissioningStatusPage() {
                             })()
                             }
 
+
+
                             {/* SECTION SUB-TOTAL - Minimalist */}
                             {
                               expandedSections[`${category}-${sectionName}`] && anyIncluded && (
@@ -1131,9 +1063,8 @@ export default function CommissioningStatusPage() {
               {/* GRAND TOTAL ROW */}
               {(tabProjects.length > 0) && (
                 (() => {
-                  const grandTotal = calculateTotals(tabProjects.filter((p: CommissioningProject) => p.includedInTotal));
+                  const grandTotal = calculateTotals(tabProjects.filter((p: { includedInTotal: any; }) => p.includedInTotal));
                   return (
-
                     <tr className="sticky bottom-0 z-40 bg-gray-900 text-white font-bold text-xs">
                       <td colSpan={5} className="px-3 py-3 text-right uppercase tracking-wider">
                         AGEL Overall Total:
@@ -1151,7 +1082,6 @@ export default function CommissioningStatusPage() {
                   );
                 })()
               )}
-
             </tbody>
           </table>
         </div>

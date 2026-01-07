@@ -6,41 +6,44 @@ A chairman-level executive dashboard designed to visualize and track the AGEL FY
 
 ## 🏗️ Architecture Overview
 
-- **Frontend**: Built with **Next.js 16**, **React 19**, and **Tailwind CSS**. It uses **Recharts** for premium data visualization and **Framer Motion** for sleek animations.
-- **Backend**: **FastAPI** (Python) handling data logic, business metric calculations, and authentication.
-- **Database**: SQLite used for persistent storage of project statuses and derived analytics.
+- **Frontend & Backend**: Unified **Next.js 16** (App Router) using **React 19** and **Tailwind CSS**. 
+- **Database**: **PostgreSQL** (via Docker) managed by **Prisma ORM**.
+- **Calculations**: All business metric calculations are handled within Next.js API routes.
 
 ---
 
 ## 🚀 Getting Started
 
-To run this project locally, you will need to start both the **Backend API** and the **Frontend Dashboard**.
+To run this project locally, follow these steps:
 
 ### 1. Prerequisites
 - **Node.js** (v18.x or later)
-- **Python** (v3.10.x or later)
+- **Docker Desktop** (for PostgreSQL)
 
 ---
 
-### 2. Backend Setup & Run
+### 2. Setup & Run
 
-The backend handles all the math logic and data serving.
-
-1. **Navigate to the backend folder**:
+1. **Start the Database**:
    ```powershell
-   cd backend
+   docker-compose up -d
    ```
 
 2. **Install Dependencies**:
    ```powershell
-   pip install -r requirements.txt
+   npm install
    ```
 
-3. **Start the Backend Server**:
+3. **Setup Database Schema**:
    ```powershell
-   python main.py
+   npx prisma db push
    ```
-   *The backend will run at `http://localhost:8000`.*
+
+4. **Start the Development Server**:
+   ```powershell
+   npm run dev
+   ```
+   *The dashboard will be available at `http://localhost:3000/application`.*
 
 ---
 
