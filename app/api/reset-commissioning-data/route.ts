@@ -1,29 +1,22 @@
 import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const FASTAPI_URL = process.env.API_BASE_URL || 'http://localhost:8002';
+        const fiscalYear = body.fiscalYear || 'FY_25-26';
 
-        // Call FastAPI backend
-        const response = await fetch(`${FASTAPI_URL}/api/reset-commissioning-data`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
+        // Reset monthly columns to 0 or null
+        await prisma.commissioningProject.updateMany({
+            where: { fiscalYear },
+            data: {
+                apr: null, may: null, jun: null, jul: null, aug: null, sep: null,
+                oct: null, nov: null, dec: null, jan: null, feb: null, mar: null,
+                totalCapacity: 0, cummTillOct: 0, q1: 0, q2: 0, q3: 0, q4: 0,
             },
-            body: JSON.stringify(body),
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            return NextResponse.json(
-                { error: `Backend error: ${response.status} - ${errorText}` },
-                { status: response.status }
-            );
-        }
-
-        const data = await response.json();
-        return NextResponse.json(data);
+        return NextResponse.json({ success: true, message: 'Data reset successfully' });
     } catch (error: any) {
         console.error('Error resetting commissioning data:', error);
         return NextResponse.json(

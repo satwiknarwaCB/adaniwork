@@ -1,18 +1,19 @@
 import { NextResponse } from 'next/server';
-import { API_BASE_URL } from '@/lib/config';
+import { prisma } from '@/lib/prisma';
 
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
         const fiscalYear = searchParams.get('fiscalYear') || 'FY_25-26';
 
-        const response = await fetch(`${API_BASE_URL}/location-relationships?fiscalYear=${encodeURIComponent(fiscalYear)}`, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
+        const rows = await prisma.locationRelationship.findMany({
+            where: { fiscalYear },
         });
 
-        const data = await response.json();
-        return NextResponse.json(data, { status: response.status });
+        return NextResponse.json(rows.map((r: any) => ({
+            location: r.location,
+            locationCode: r.locationCode
+        })), { status: 200 });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -24,14 +25,22 @@ export async function POST(request: Request) {
         const fiscalYear = searchParams.get('fiscalYear') || 'FY_25-26';
         const body = await request.json();
 
-        const response = await fetch(`${API_BASE_URL}/location-relationships?fiscalYear=${encodeURIComponent(fiscalYear)}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
+        // Clear existing
+        await prisma.locationRelationship.deleteMany({
+            where: { fiscalYear },
         });
 
-        const data = await response.json();
-        return NextResponse.json(data, { status: response.status });
+        if (Array.isArray(body)) {
+            await prisma.locationRelationship.createMany({
+                data: body.map((rel: any) => ({
+                    location: rel.location,
+                    locationCode: rel.locationCode,
+                    fiscalYear
+                })),
+            });
+        }
+
+        return NextResponse.json({ success: true }, { status: 200 });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

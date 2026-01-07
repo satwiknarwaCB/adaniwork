@@ -58,36 +58,20 @@ export default function ChatbotPanel() {
         setInputValue('');
         setIsLoading(true);
 
-        // DELAY TO SIMULATE PROCESSING
-        setTimeout(() => {
-            let response = "";
-            const query = text.toLowerCase();
-
-            if (query.includes("filter")) {
-                response = "You can use the dropdowns at the top of the dashboard to filter by Category, Business Model, or Project Status.";
-            } else if (query.includes("solar")) {
-                response = "The Solar dashboard shows Khavda and Rajasthan projects. The Summary cards at the top show the total capacity for Solar Section A, B, and C.";
-            } else if (query.includes("wind")) {
-                response = "Wind projects from Khavda and Mundra (Sections A and C) are included in the overall totals.";
-            } else if (query.includes("export") || query.includes("download")) {
-                response = "Use the 'Export to Excel' button on the Commissioning Status page to download the current table data.";
-            } else if (query.includes("include") || query.includes("total")) {
-                response = "Projects marked with 'Included in Total' contribute to the CEO gauges. Other merchant or internal projects (Sections D1, D2 etc.) are shown for visibility but don't affect the target achievement.";
-            } else if (query.includes("target") || query.includes("fy target")) {
-                response = "The FY 2025-26 target is determined by the total PPA Plan capacity of all projects marked 'Included in Total'. This target is visible in the Achievement Gauge header.";
-            } else if (query.includes("critical") || query.includes("behind")) {
-                response = "Critical projects are those where 'Actual' commissioning is less than the 'Plan'. You can view a ranked list of these in the 'Deviation Analysis' tab.";
-            } else if (query.includes("spv")) {
-                response = "Yes, you can drill down by SPV in the 'Quarterly Performance' chart controls or manage the SPV list in the 'Master Data' section.";
-            } else if (query.includes("difference") || query.includes("split")) {
-                response = "The 'Technology Mix' chart provides a side-by-side comparison of Solar vs. Wind capacity, showing both the MW value and percentage split.";
-            } else {
-                response = "I am currently in Offline Mode for data security. I can help with dashboard navigation and layout questions!";
-            }
-
-            setMessages(prev => [...prev, { role: 'assistant', content: response }]);
+        try {
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: text }),
+            });
+            const data = await response.json();
+            setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
+        } catch (error) {
+            console.error('Chat Error:', error);
+            setMessages(prev => [...prev, { role: 'assistant', content: "I'm sorry, I'm having trouble responding right now." }]);
+        } finally {
             setIsLoading(false);
-        }, 800);
+        }
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {

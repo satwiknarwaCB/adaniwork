@@ -512,12 +512,12 @@ export default function CommissioningDashboard() {
                     label="ACTUAL COMMISSIONING"
                     value={kpi2.actual}
                     unit="MW"
-                    trend={`${kpi2.achievement.toFixed(1)}% of Plan`}
+                    trend={`${kpi2.achievement.toFixed(4)}% of Plan`}
                     gradient="from-emerald-500 to-teal-600"
                 />
                 <KPICard
                     label="STATUS PERFORMANCE"
-                    value={kpi3.achievement.toFixed(1)}
+                    value={kpi3.achievement}
                     unit="%"
                     trend={kpi3.achievement > 70 ? "Excellent" : "On Track"}
                     gradient="from-indigo-500 to-purple-600"
@@ -558,7 +558,7 @@ export default function CommissioningDashboard() {
                             >
                                 <div className="mb-2 text-center">
                                     <span className="text-[10px] font-bold text-[#0B74B0] dark:text-blue-400 uppercase tracking-widest bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full border border-blue-100 dark:border-blue-800 shadow-sm inline-block">
-                                        {gaugeData.periodName} Target: {gaugeData.plan.toLocaleString()} MW
+                                        {gaugeData.periodName} Target: {gaugeData.plan.toLocaleString(undefined, { maximumFractionDigits: 4 })} MW
                                     </span>
                                 </div>
                                 <div className="h-[180px] relative">
@@ -572,13 +572,13 @@ export default function CommissioningDashboard() {
                                     <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none p-4 text-center">
                                         <div className="flex flex-col items-center leading-tight">
                                             <span className="text-3xl font-black text-[#1F2937] dark:text-white">
-                                                {gaugeData.achievement.toFixed(1)}
+                                                {gaugeData.achievement.toFixed(4)}
                                                 <span className="text-sm ml-0.5 font-bold text-gray-400">%</span>
                                             </span>
                                             <span className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] mt-0.5">Achievement</span>
                                         </div>
                                         <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-800 w-24 flex flex-col items-center">
-                                            <span className="text-[12px] font-bold text-[#10B981]">{gaugeData.actual.toLocaleString()} MW</span>
+                                            <span className="text-[12px] font-bold text-[#10B981]">{gaugeData.actual.toLocaleString(undefined, { maximumFractionDigits: 4 })} MW</span>
                                             <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">Actually Achieved</span>
                                         </div>
                                     </div>
@@ -625,7 +625,7 @@ export default function CommissioningDashboard() {
                                     </ResponsiveContainer>
                                     <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                                         <span className="text-xl font-bold text-gray-800 dark:text-white leading-none">
-                                            {(techMixHovered ? techMixHovered.value : techSplitData.total).toLocaleString()}
+                                            {(techMixHovered ? techMixHovered.value : techSplitData.total).toLocaleString(undefined, { maximumFractionDigits: 4 })}
                                         </span>
                                         <span className="text-[8px] font-semibold text-gray-400 uppercase mt-0.5">
                                             {techMixHovered ? techMixHovered.name : "Total MW"}
@@ -645,8 +645,8 @@ export default function CommissioningDashboard() {
                                                     <div className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
                                                     <span className="text-[9px] font-semibold text-gray-500 uppercase">{d.name}</span>
                                                 </div>
-                                                <span className="text-xs font-bold text-gray-900 dark:text-white">{d.value.toLocaleString()} MW</span>
-                                                <span className="text-[9px] font-medium text-[#0B74B0]">{perc.toFixed(1)}%</span>
+                                                <span className="text-xs font-bold text-gray-900 dark:text-white">{d.value.toLocaleString(undefined, { maximumFractionDigits: 4 })} MW</span>
+                                                <span className="text-[9px] font-medium text-[#0B74B0]">{perc.toFixed(4)}%</span>
                                             </div>
                                         );
                                     })}
@@ -728,7 +728,7 @@ export default function CommissioningDashboard() {
                                 <span className="w-1 h-5 bg-orange-500 rounded-sm" />
                                 Solar Portfolio Analysis
                             </h3>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-wrap gap-2 relative z-50">
                                 <CardSelect label="Category" options={categoryOptions} value={solarCategory} onChange={setSolarCategory} />
                                 <CardSelect label="Model" options={businessModelOptions} value={solarBusinessModel} onChange={setSolarBusinessModel} />
                                 <MultiSlicer label="Projects" options={SECTION_OPTIONS.filter(s => s.label.includes('Solar'))} selected={selectedSections} onChange={setSelectedSections} />
@@ -739,15 +739,15 @@ export default function CommissioningDashboard() {
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
                             <div className="text-center">
                                 <p className="text-xs font-medium text-gray-500 uppercase">Total Plan</p>
-                                <p className="text-xl font-bold text-gray-900 dark:text-white">{solarData.totalPlan.toLocaleString()} <span className="text-sm text-gray-400">MW</span></p>
+                                <p className="text-xl font-bold text-gray-900 dark:text-white">{solarData.totalPlan.toLocaleString(undefined, { maximumFractionDigits: 4 })} <span className="text-sm text-gray-400">MW</span></p>
                             </div>
                             <div className="text-center">
                                 <p className="text-xs font-medium text-gray-500 uppercase">Actual</p>
-                                <p className="text-xl font-bold text-gray-900 dark:text-white">{solarData.totalActual.toLocaleString()} <span className="text-sm text-gray-400">MW</span></p>
+                                <p className="text-xl font-bold text-gray-900 dark:text-white">{solarData.totalActual.toLocaleString(undefined, { maximumFractionDigits: 4 })} <span className="text-sm text-gray-400">MW</span></p>
                             </div>
                             <div className="text-center">
                                 <p className="text-xs font-medium text-gray-500 uppercase">Achievement</p>
-                                <p className="text-xl font-bold text-gray-900 dark:text-white">{solarData.totalPlan > 0 ? ((solarData.totalActual / solarData.totalPlan) * 100).toFixed(1) : 0}%</p>
+                                <p className="text-xl font-bold text-gray-900 dark:text-white">{solarData.totalPlan > 0 ? ((solarData.totalActual / solarData.totalPlan) * 100).toFixed(4) : 0}%</p>
                             </div>
                             <div className="text-center">
                                 <p className="text-xs font-medium text-gray-500 uppercase">Projects</p>
@@ -778,7 +778,7 @@ export default function CommissioningDashboard() {
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                         <XAxis dataKey="name" axisLine={false} tickLine={false} />
                                         <YAxis axisLine={false} tickLine={false} />
-                                        <Tooltip formatter={(v: any) => `${v.toLocaleString()} MW`} />
+                                        <Tooltip formatter={(v: any) => `${v.toLocaleString(undefined, { maximumFractionDigits: 4 })} MW`} />
                                         <Bar dataKey="PPA Plan" fill="#F97316" radius={[6, 6, 0, 0]} barSize={32} />
                                         <Bar dataKey="Actual Commissioning" fill="#10B981" radius={[6, 6, 0, 0]} barSize={32} />
                                     </BarChart>
@@ -793,7 +793,7 @@ export default function CommissioningDashboard() {
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                         <XAxis dataKey="name" axisLine={false} tickLine={false} />
                                         <YAxis axisLine={false} tickLine={false} />
-                                        <Tooltip formatter={(v: any) => `${v.toLocaleString()} MW`} />
+                                        <Tooltip formatter={(v: any) => `${v.toLocaleString(undefined, { maximumFractionDigits: 4 })} MW`} />
                                         <Area type="monotone" dataKey="PPA Plan" stroke="#F97316" fill="#FED7AA" strokeWidth={3} />
                                         <Area type="monotone" dataKey="Actual Commissioning" stroke="#10B981" fill="#A7F3D0" strokeWidth={3} />
                                     </AreaChart>
@@ -844,7 +844,7 @@ export default function CommissioningDashboard() {
                                 <span className="w-1 h-5 bg-cyan-500 rounded-sm" />
                                 Wind Portfolio Analysis
                             </h3>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-wrap gap-2 relative z-50">
                                 <CardSelect label="Category" options={categoryOptions} value={windCategory} onChange={setWindCategory} />
                                 <CardSelect label="Model" options={businessModelOptions} value={windBusinessModel} onChange={setWindBusinessModel} />
                                 <MultiSlicer label="Projects" options={SECTION_OPTIONS.filter(s => s.label.includes('Wind'))} selected={selectedSections} onChange={setSelectedSections} />
@@ -855,15 +855,15 @@ export default function CommissioningDashboard() {
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
                             <div className="text-center">
                                 <p className="text-xs font-medium text-gray-500 uppercase">Total Plan</p>
-                                <p className="text-xl font-bold text-gray-900 dark:text-white">{windData.totalPlan.toLocaleString()} <span className="text-sm text-gray-400">MW</span></p>
+                                <p className="text-xl font-bold text-gray-900 dark:text-white">{windData.totalPlan.toLocaleString(undefined, { maximumFractionDigits: 4 })} <span className="text-sm text-gray-400">MW</span></p>
                             </div>
                             <div className="text-center">
                                 <p className="text-xs font-medium text-gray-500 uppercase">Actual</p>
-                                <p className="text-xl font-bold text-gray-900 dark:text-white">{windData.totalActual.toLocaleString()} <span className="text-sm text-gray-400">MW</span></p>
+                                <p className="text-xl font-bold text-gray-900 dark:text-white">{windData.totalActual.toLocaleString(undefined, { maximumFractionDigits: 4 })} <span className="text-sm text-gray-400">MW</span></p>
                             </div>
                             <div className="text-center">
                                 <p className="text-xs font-medium text-gray-500 uppercase">Achievement</p>
-                                <p className="text-xl font-bold text-gray-900 dark:text-white">{windData.totalPlan > 0 ? ((windData.totalActual / windData.totalPlan) * 100).toFixed(1) : 0}%</p>
+                                <p className="text-xl font-bold text-gray-900 dark:text-white">{windData.totalPlan > 0 ? ((windData.totalActual / windData.totalPlan) * 100).toFixed(4) : 0}%</p>
                             </div>
                             <div className="text-center">
                                 <p className="text-xs font-medium text-gray-500 uppercase">Projects</p>
@@ -894,7 +894,7 @@ export default function CommissioningDashboard() {
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                         <XAxis dataKey="name" axisLine={false} tickLine={false} />
                                         <YAxis axisLine={false} tickLine={false} />
-                                        <Tooltip formatter={(v: any) => `${v.toLocaleString()} MW`} />
+                                        <Tooltip formatter={(v: any) => `${v.toLocaleString(undefined, { maximumFractionDigits: 4 })} MW`} />
                                         <Bar dataKey="PPA Plan" fill="#06B6D4" radius={[6, 6, 0, 0]} barSize={32} />
                                         <Bar dataKey="Actual Commissioning" fill="#10B981" radius={[6, 6, 0, 0]} barSize={32} />
                                     </BarChart>
@@ -909,7 +909,7 @@ export default function CommissioningDashboard() {
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                         <XAxis dataKey="name" axisLine={false} tickLine={false} />
                                         <YAxis axisLine={false} tickLine={false} />
-                                        <Tooltip formatter={(v: any) => `${v.toLocaleString()} MW`} />
+                                        <Tooltip formatter={(v: any) => `${v.toLocaleString(undefined, { maximumFractionDigits: 4 })} MW`} />
                                         <Area type="monotone" dataKey="PPA Plan" stroke="#06B6D4" fill="#A5F3FC" strokeWidth={3} />
                                         <Area type="monotone" dataKey="Actual Commissioning" stroke="#10B981" fill="#A7F3D0" strokeWidth={3} />
                                     </AreaChart>
@@ -1278,7 +1278,9 @@ function MultiSlicer({ label, options, selected, onChange }: { label: string; op
     const [isOpen, setIsOpen] = useState(false);
     const buttonRef = React.useRef<HTMLButtonElement>(null);
 
-    const handleOpen = () => {
+    const handleOpen = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
         setIsOpen(!isOpen);
     };
 
@@ -1336,6 +1338,7 @@ function CardSelect({ label, options, value, onChange, variant = 'light' }: { la
 
     const handleOpen = (e: React.MouseEvent) => {
         e.stopPropagation();
+        e.preventDefault();
         setIsOpen(!isOpen);
     };
 
@@ -1411,7 +1414,7 @@ function KPICard({ label, value, unit, trend, gradient }: { label: string; value
                         <p className="text-[10px] font-bold text-white/90 uppercase tracking-widest leading-tight">{label}</p>
                         <div className="flex items-baseline gap-1.5 flex-wrap">
                             <h2 className="text-2xl sm:text-3xl font-bold text-white leading-none shadow-sm drop-shadow-sm">
-                                {typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 1 }) : value}
+                                {typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 4 }) : value}
                             </h2>
                             <span className="text-sm font-medium text-white/80">{unit}</span>
                         </div>

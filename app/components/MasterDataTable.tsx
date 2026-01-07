@@ -146,6 +146,22 @@ export default function MasterDataTable() {
         }
     });
 
+    const saveLocationRelationshipsMutation = useMutation({
+        mutationFn: async (relationships: LocationRelationship[]) => {
+            const response = await fetch(`/api/location-relationships?fiscalYear=${fiscalYear}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(relationships),
+            });
+            if (!response.ok) throw new Error(await response.text());
+            return response.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['masterData', fiscalYear] });
+            alert('Location mappings saved successfully!');
+        }
+    });
+
     // --- EXTRACT DATA ---
     const dropdownOptions = masterData?.dropdownOptions || {
         groups: [], ppaMerchants: [], types: [], locationCodes: [], locations: [], connectivities: [], sections: [], categories: []
@@ -366,10 +382,84 @@ export default function MasterDataTable() {
             {activeTab === 'locations' && (
                 <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
                     <div className="p-6">
-                        <p className="text-sm text-gray-500 mb-4">Map literal project locations to their standardized tracking codes.</p>
-                        {/* Simplified Location Table would go here */}
-                        <div className="text-center py-12 text-gray-400">
-                            <p>Location Mapping Module Loaded.</p>
+                        <div className="flex justify-between items-center mb-6">
+                            <div>
+                                <h3 className="text-lg font-bold text-gray-900 dark:text-white">Location Mappings</h3>
+                                <p className="text-sm text-gray-500">Map literal project locations to their standardized tracking codes.</p>
+                            </div>
+                            <button
+                                onClick={() => saveLocationRelationshipsMutation.mutate(locationRelationships)}
+                                disabled={saveLocationRelationshipsMutation.isPending}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold shadow-sm transition-all"
+                            >
+                                {saveLocationRelationshipsMutation.isPending ? 'Saving...' : 'Save All Mappings'}
+                            </button>
+                        </div>
+
+                        <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg">
+                            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                <thead className="bg-gray-50 dark:bg-gray-900">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Location Name</th>
+                                        <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Standard Code</th>
+                                        <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                    {/* Add New Row */}
+                                    <tr className="bg-blue-50/30 dark:bg-blue-900/10">
+                                        <td className="px-6 py-4">
+                                            <input
+                                                type="text"
+                                                value={newRelationship.location}
+                                                onChange={(e) => setNewRelationship({ ...newRelationship, location: e.target.value })}
+                                                placeholder="e.g. Khavda Phase 1"
+                                                className="w-full px-3 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-700 dark:bg-gray-900"
+                                            />
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <input
+                                                type="text"
+                                                value={newRelationship.locationCode}
+                                                onChange={(e) => setNewRelationship({ ...newRelationship, locationCode: e.target.value })}
+                                                placeholder="e.g. Khavda"
+                                                className="w-full px-3 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-700 dark:bg-gray-900"
+                                            />
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                            <button
+                                                onClick={() => {
+                                                    if (!newRelationship.location || !newRelationship.locationCode) return;
+                                                    const updated = [...locationRelationships, newRelationship];
+                                                    saveLocationRelationshipsMutation.mutate(updated);
+                                                    setNewRelationship({ location: '', locationCode: '' });
+                                                }}
+                                                className="text-blue-600 hover:text-blue-800 font-bold text-xs"
+                                            >
+                                                Add Mapping
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {locationRelationships.map((rel: LocationRelationship, idx: number) => (
+                                        <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                            <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">{rel.location}</td>
+                                            <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">{rel.locationCode}</td>
+                                            <td className="px-6 py-4 text-right">
+                                                <button
+                                                    onClick={() => {
+                                                        if (!confirm('Delete this mapping?')) return;
+                                                        const updated = locationRelationships.filter((_: any, i: number) => i !== idx);
+                                                        saveLocationRelationshipsMutation.mutate(updated);
+                                                    }}
+                                                    className="text-red-500 hover:text-red-700 text-xs"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>

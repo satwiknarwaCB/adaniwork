@@ -1,30 +1,52 @@
 import { NextResponse } from 'next/server';
-import { API_BASE_URL } from '@/lib/config';
+import { parseExcelWorkbook, importProjectsToDb } from '@/lib/excelParser';
 
 export async function POST(request: Request) {
     try {
         const formData = await request.formData();
+        const file = formData.get('file') as File;
+        const fiscalYear = (formData.get('fiscalYear') as string) || 'FY_25-26';
 
-        // Forward the request to FastAPI backend
-        const response = await fetch(`${API_BASE_URL}/api/upload-excel`, {
-            method: 'POST',
-            body: formData,
-        });
+        if (!file) {
+            return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+        }
 
-        const result = await response.json();
+        const buffer = Buffer.from(await file.arrayBuffer());
 
-        if (response.ok) {
-            return NextResponse.json(result, { status: 200 });
-        } else {
+        // Parse Excel
+        const result = await parseExcelWorkbook(buffer);
+
+        if (result.errors.length > 0 && result.projects.length === 0) {
             return NextResponse.json(
                 {
-                    error: result.detail || 'Failed to process upload',
-                    failed: result.failed || 0,
-                    errors: result.errors || [],
-                    parse_errors: result.parse_errors || []
+                    error: 'Failed to parse Excel file',
+                    errors: result.errors,
+                    sheets_found: result.sheets_found
                 },
-                { status: response.status }
+                { status: 400 }
             );
+        }
+
+        // Import to database
+        if (result.projects.length > 0) {
+            const importResult = await importProjectsToDb(result.projects, fiscalYear);
+
+            return NextResponse.json({
+                message: 'Excel uploaded successfully',
+                projects_imported: importResult.inserted_projects,
+                summaries_imported: 0,
+                sheets_found: result.sheets_found,
+                sheet_count: result.sheets_found.length,
+                parse_errors: result.errors
+            }, { status: 200 });
+        } else {
+            return NextResponse.json({
+                message: 'No projects found in Excel',
+                projects_imported: 0,
+                sheets_found: result.sheets_found,
+                sheet_count: result.sheets_found.length,
+                parse_errors: result.errors
+            }, { status: 200 });
         }
     } catch (error: any) {
         console.error('Error uploading Excel file:', error);
