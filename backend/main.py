@@ -1091,6 +1091,71 @@ def api_import_data():
 def api_import_default_data():
     return import_default_data()
 
+# --- Excel Upload Endpoint ---
+
+@app.post("/api/upload-excel")
+async def upload_excel(file: UploadFile = File(...), fiscalYear: str = Form("FY_25-26")):
+    """
+    Upload an Excel file and import commissioning data.
+    """
+    from excel_parser import parse_excel_workbook, import_projects_to_db
+    
+    try:
+        # Read file content
+        content = await file.read()
+        filename = file.filename or "uploaded.xlsx"
+        
+        # Parse Excel
+        result = parse_excel_workbook(content, filename)
+        
+        if result['errors'] and not result['projects']:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "detail": "Failed to parse Excel file",
+                    "errors": result['errors'],
+                    "sheets_found": result['sheets_found']
+                }
+            )
+        
+        # Import to database
+        if result['projects']:
+            import_result = import_projects_to_db(result['projects'], result['summaries'], fiscalYear)
+            
+            if not import_result['success']:
+                return JSONResponse(
+                    status_code=500,
+                    content={
+                        "detail": "Failed to import data to database",
+                        "error": import_result.get('error')
+                    }
+                )
+            
+            return {
+                "message": "Excel uploaded successfully",
+                "projects_imported": import_result['inserted_projects'],
+                "summaries_imported": import_result['inserted_summaries'],
+                "sheets_found": result['sheets_found'],
+                "sheet_count": result['sheet_count'],
+                "parse_errors": result['errors']
+            }
+        else:
+            return {
+                "message": "No projects found in Excel",
+                "projects_imported": 0,
+                "sheets_found": result['sheets_found'],
+                "sheet_count": result['sheet_count'],
+                "parse_errors": result['errors']
+            }
+            
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Upload failed: {str(e)}"}
+        )
+
 # --- Commissioning Status Endpoints ---
 
 @app.get("/commissioning-projects")

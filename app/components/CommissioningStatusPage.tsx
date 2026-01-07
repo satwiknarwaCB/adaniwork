@@ -455,8 +455,11 @@ export default function CommissioningStatusPage() {
           sheets_found: data.sheets_found,
           sheet_count: data.sheet_count
         });
-        // Refresh data
-        queryClient.invalidateQueries({ queryKey: ['commissioning-projects', fiscalYear] });
+        // Refresh ALL commissioning data across all pages
+        queryClient.invalidateQueries({ queryKey: ['commissioning-projects'] });
+        queryClient.invalidateQueries({ queryKey: ['commissioning-projects-all'] });
+        queryClient.invalidateQueries({ queryKey: ['commissioning-summaries'] });
+        queryClient.invalidateQueries({ queryKey: ['masterData'] });
       }
     } catch (error: any) {
       setUploadResult({
@@ -699,28 +702,28 @@ export default function CommissioningStatusPage() {
       {/* Summary Cards - Minimalist Adani Style */}
       {activeTab === 'overview' && !filters.section && !filters.category && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
-          <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl p-5 shadow-lg text-white relative overflow-hidden group hover:shadow-xl transition-all">
+          <div className="bg-gradient-to-br from-[#007B9E] to-[#005F7A] rounded-xl p-5 shadow-lg text-white relative overflow-hidden group hover:shadow-xl transition-all">
             <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
               <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 20 20"><path d="M3 1a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 11.846 4.632 14 6.414 14H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 3H6.28l-.31-1.243A1 1 0 005 1H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" /></svg>
             </div>
-            <h3 className="text-[10px] font-bold text-blue-100 uppercase tracking-wider mb-2">Total Included Capacity</h3>
-            <p className="text-2xl sm:text-3xl font-bold text-white shadow-sm">{formatNumber(hierarchicalTotals.total.totalCapacity)} <span className="text-sm font-medium text-blue-100">MW</span></p>
+            <h3 className="text-[10px] font-bold text-white/80 uppercase tracking-wider mb-2">Total Included Capacity</h3>
+            <p className="text-2xl sm:text-3xl font-bold text-white shadow-sm">{formatNumber(hierarchicalTotals.total.totalCapacity)} <span className="text-sm font-medium text-white/80">MW</span></p>
           </div>
-          <div className="bg-gradient-to-br from-[#0B74B0] to-blue-600 rounded-xl p-5 shadow-lg text-white relative overflow-hidden group hover:shadow-xl transition-all">
+          <div className="bg-gradient-to-br from-[#007B9E] to-[#6C2B85] rounded-xl p-5 shadow-lg text-white relative overflow-hidden group hover:shadow-xl transition-all">
             <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
               <svg className="w-16 h-16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
             </div>
-            <h3 className="text-[10px] font-bold text-emerald-100 uppercase tracking-wider mb-2">Achieved (Overall)</h3>
-            <p className="text-2xl sm:text-3xl font-bold text-white shadow-sm">{formatNumber(hierarchicalTotals.total.cummTillOct)} <span className="text-sm font-medium text-emerald-100">MW</span></p>
+            <h3 className="text-[10px] font-bold text-white/80 uppercase tracking-wider mb-2">Achieved (Overall)</h3>
+            <p className="text-2xl sm:text-3xl font-bold text-white shadow-sm">{formatNumber(hierarchicalTotals.total.cummTillOct)} <span className="text-sm font-medium text-white/80">MW</span></p>
           </div>
           {categories.map((cat: string, idx: number) => {
             const catKey = cat.toLowerCase();
             const catTotals = hierarchicalTotals.categories[catKey] || calculateTotals([]);
             const colors = [
-              'from-orange-500 to-amber-600',
-              'from-cyan-500 to-blue-600',
-              'from-emerald-500 to-teal-600',
-              'from-purple-500 to-indigo-600'
+              'from-[#6C2B85] to-[#C02741]',
+              'from-[#C02741] to-[#9E1F35]',
+              'from-[#007B9E] to-[#005F7A]',
+              'from-[#007B9E] to-[#6C2B85]'
             ];
             const color = colors[idx % colors.length];
 

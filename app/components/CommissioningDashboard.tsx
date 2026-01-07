@@ -147,12 +147,13 @@ export default function CommissioningDashboard() {
     const globalKpiScope = categoryFilter === 'all' ? 'Overall' : categoryFilter === 'solar' ? 'Solar' : 'Wind';
 
     const { data: allProjects = [], isLoading } = useQuery<CommissioningProject[]>({
-        queryKey: ['commissioning-projects-all', fiscalYear],
+        queryKey: ['commissioning-projects', fiscalYear],
         queryFn: async () => {
             const response = await fetch(`/api/commissioning-projects?fiscalYear=${fiscalYear}`);
             if (!response.ok) throw new Error('Failed to fetch projects');
             return response.json();
-        }
+        },
+        staleTime: 0, // Always fetch fresh data when navigating
     });
 
     const filteredProjects = useMemo(() => {
@@ -1389,13 +1390,13 @@ function CardSelect({ label, options, value, onChange, variant = 'light' }: { la
 
 
 function KPICard({ label, value, unit, trend, gradient }: { label: string; value: any; unit: string; trend: string; gradient: string }) {
-    // Map gradient to Adani brand color gradients
+    // Map gradient to Adani logo brand colors - Blue (#007B9E) → Purple (#6C2B85) → Magenta (#C02741)
     const getBgColor = () => {
-        if (gradient.includes('blue') || gradient.includes('indigo')) return 'bg-gradient-to-br from-[#0B74B0] to-[#095D8D]'; // Adani Blue Gradient
-        if (gradient.includes('emerald') || gradient.includes('teal')) return 'bg-gradient-to-br from-[#00B16B] to-[#008F56]'; // Adani Green Gradient
-        if (gradient.includes('purple')) return 'bg-gradient-to-br from-[#75479C] to-[#5D387C]'; // Adani Purple Gradient
-        if (gradient.includes('rose') || gradient.includes('red')) return 'bg-gradient-to-br from-[#BD3861] to-[#992D4E]'; // Adani Maroon Gradient
-        return 'bg-gradient-to-br from-[#0B74B0] to-[#095D8D]';
+        if (gradient.includes('blue') || gradient.includes('indigo')) return 'bg-gradient-to-br from-[#007B9E] to-[#005F7A]'; // Adani Blue (from logo)
+        if (gradient.includes('emerald') || gradient.includes('teal')) return 'bg-gradient-to-br from-[#007B9E] to-[#6C2B85]'; // Adani Blue to Purple
+        if (gradient.includes('purple')) return 'bg-gradient-to-br from-[#6C2B85] to-[#C02741]'; // Adani Purple to Magenta
+        if (gradient.includes('rose') || gradient.includes('red')) return 'bg-gradient-to-br from-[#C02741] to-[#9E1F35]'; // Adani Magenta (from logo)
+        return 'bg-gradient-to-br from-[#007B9E] to-[#005F7A]';
     };
 
     return (
