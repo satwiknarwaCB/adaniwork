@@ -17,7 +17,7 @@ const Cards = () => {
                         Live
                     </span>
                 </div>
-                <h3 className="text-md font-bold mb-3 text-gray-900 dark:text-white">Asset Commissioning </h3>
+                <h3 className="text-md font-bold mb-3 text-gray-900 dark:text-white">Execution & Commissioning Tracker </h3>
                 <p className=" text-sm text-gray-600 dark:text-gray-300 mb-4">
                     Here you can track the capacity of your energy sources in real-time and optimize your energy usage.
                 </p>
@@ -35,7 +35,7 @@ const Cards = () => {
                         Live
                     </span>
                 </div>
-                <h3 className="text-md font-bold mb-3 text-gray-900 dark:text-white">CEO Tracker</h3>
+                <h3 className="text-md font-bold mb-3 text-gray-900 dark:text-white">Capacity Tracker</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
                     Commitment to sustainable practices that protect our environment for future generations.
                 </p>

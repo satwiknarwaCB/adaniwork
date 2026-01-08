@@ -141,7 +141,7 @@ const HIERARCHY = {
 
 export default function CommissioningStatusPage() {
   const queryClient = useQueryClient();
-  const { user, isAdmin, logout } = useAuth();
+  const { user, isAdmin, isSuperAdmin, logout } = useAuth();
   const [fiscalYear] = useState('FY_25-26');
   const [activeTab, setActiveTab] = useState<string>('overview');
 
@@ -149,7 +149,7 @@ export default function CommissioningStatusPage() {
   const [filters, setFilters] = useState({
     category: '',
     projectType: '',
-    planActual: 'All',
+    planActual: 'Plan',
     spv: '',
     section: '',
     showExcluded: true, // Show items excluded from totals
@@ -168,7 +168,7 @@ export default function CommissioningStatusPage() {
   } | null>(null);
 
   // Fetch projects
-  const { data: projects = [], isLoading: projectsLoading } = useQuery({
+  const { data: rawProjects = [], isLoading: projectsLoading } = useQuery({
     queryKey: ['commissioning-projects', fiscalYear, filters.planActual],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -182,6 +182,20 @@ export default function CommissioningStatusPage() {
     },
     staleTime: 5 * 60 * 1000,
   });
+
+  // Deduplicate projects to prevent inflated summaries
+  const projects = useMemo(() => {
+    const seen = new Set();
+    return rawProjects.filter((p: CommissioningProject) => {
+      const key = `${p.projectName}-${p.spv}-${p.category}-${p.section}-${p.planActual}-${p.capacity}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [rawProjects]);
+
+  // Rest of usage stays same ...
+
 
   // Fetch summaries
   const { data: summaries = [], isLoading: summariesLoading } = useQuery({
@@ -403,6 +417,10 @@ export default function CommissioningStatusPage() {
 
   // Handle inline cell save
   const handleCellSave = (project: CommissioningProject, field: string, value: number | null) => {
+    if (!isAdmin) {
+      alert('You do not have permission to modify project data. Please login as an Admin.');
+      return;
+    }
     const updatedProject = { ...project, [field]: value };
     const updatedProjects = projects.map((p: CommissioningProject) =>
       p.id === project.id ? updatedProject : p
@@ -428,7 +446,12 @@ export default function CommissioningStatusPage() {
   // Format number for display
   const formatNumber = (value: number | null | undefined): string => {
     if (value === null || value === undefined) return '–';
-    return value.toFixed(0);
+    // Round to 1 decimal place to avoid floating-point errors, then check if whole
+    const rounded = Math.round(value * 10) / 10;
+    if (Number.isInteger(rounded)) {
+      return rounded.toLocaleString();
+    }
+    return rounded.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   };
 
   // Handle Excel upload
@@ -593,8 +616,8 @@ export default function CommissioningStatusPage() {
             </button>
           )}
 
-          {/* Reset Data Button - Admin Only */}
-          {isAdmin && (
+          {/* Reset Data Button - Super Admin Only */}
+          {isSuperAdmin && (
             <button
               onClick={async () => {
                 if (confirm('Are you sure you want to RESET all commissioning data? This will clear all monthly values and cannot be undone.')) {
@@ -748,6 +771,15 @@ export default function CommissioningStatusPage() {
       {/* PDF-Style Summary Tables - Only show when no specific section/category is selected */}
       {activeTab === 'overview' && !filters.section && !filters.category && (
         <div className="space-y-6">
+          {/* AGEL Overall FY Summary (All Categories) - NOW AT TOP */}
+          <SummaryTable
+            title={`AGEL Overall FY 2025-26 ${categories.length > 0 ? `(${categories.map((_: string, i: number) => i + 1).join(' + ')})` : ''}`}
+            projects={projects.filter((p: CommissioningProject) => p.includedInTotal)}
+            monthColumns={monthColumns}
+            monthLabels={monthLabels}
+            formatNumber={formatNumber}
+          />
+
           {categories.map((cat: string, idx: number) => (
             <SummaryTable
               key={cat}
@@ -760,15 +792,6 @@ export default function CommissioningStatusPage() {
               formatNumber={formatNumber}
             />
           ))}
-
-          {/* AGEL Overall FY Summary (All Categories) */}
-          <SummaryTable
-            title={`AGEL Overall FY 2025-26 ${categories.length > 0 ? `(${categories.map((_: string, i: number) => i + 1).join(' + ')})` : ''}`}
-            projects={projects.filter((p: CommissioningProject) => p.includedInTotal)}
-            monthColumns={monthColumns}
-            monthLabels={monthLabels}
-            formatNumber={formatNumber}
-          />
         </div>
       )}
 
@@ -1294,6 +1317,7 @@ function EditableCell({ value, isEditing, onEdit, onSave, onCancel, formatNumber
         <input
           ref={inputRef}
           type="number"
+          step="0.1"
           value={tempValue}
           onChange={(e) => setTempValue(e.target.value)}
           onKeyDown={handleKeyDown}

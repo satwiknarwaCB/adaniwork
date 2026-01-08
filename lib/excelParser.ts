@@ -50,7 +50,7 @@ export async function parseExcelWorkbook(buffer: Buffer): Promise<ExcelParseResu
     }
 
     const worksheet = workbook.Sheets[summarySheetName];
-    const data: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    const data: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true });
 
     let headerRowIdx = -1;
     const colMap: Record<string, number> = {};

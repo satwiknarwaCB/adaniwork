@@ -23,12 +23,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
     }
 
-    // Hardcoded admin for demo/initial setup if DB is empty
+    // Hardcoded personas for demo
+    if (email === 'superadmin@adani.com' && password === 'adani123') {
+      return NextResponse.json({
+        access_token: 'dummy-super-token',
+        token_type: 'bearer',
+        user: { username: 'Super Admin', email: 'superadmin@adani.com', role: 'SUPER_ADMIN' }
+      });
+    }
+
     if (email === 'admin@adani.com' && password === 'adani123456') {
       return NextResponse.json({
-        access_token: 'dummy-token',
+        access_token: 'dummy-admin-token',
         token_type: 'bearer',
-        user: { username: 'adani', email: 'admin@adani.com', role: 'admin' }
+        user: { username: 'Admin', email: 'admin@adani.com', role: 'ADMIN' }
+      });
+    }
+
+    if (email === 'user@adani.com' && password === 'adani123') {
+      return NextResponse.json({
+        access_token: 'dummy-user-token',
+        token_type: 'bearer',
+        user: { username: 'Standard User', email: 'user@adani.com', role: 'USER' }
       });
     }
 
@@ -53,7 +69,7 @@ export async function POST(request: Request) {
       user: {
         username: user.username,
         email: user.email,
-        role: user.role
+        role: user.role.toUpperCase() // Ensure role is uppercase to match types
       }
     }, { status: 200 });
   } catch (error: any) {

@@ -4,7 +4,7 @@ interface User {
   id: number;
   username: string;
   email: string;
-  role: 'admin' | 'viewer';
+  role: 'SUPER_ADMIN' | 'ADMIN' | 'USER';
   created_at: string;
 }
 
@@ -16,8 +16,6 @@ export function useAuth() {
   useEffect(() => {
     const token = localStorage.getItem('authToken');
     if (token) {
-      // In a real app, you would validate the token with your backend
-      // For now, we'll just check if it exists
       const userData = localStorage.getItem('userData');
       if (userData) {
         setUser(JSON.parse(userData));
@@ -41,7 +39,7 @@ export function useAuth() {
       if (response.ok) {
         // Store user data and token
         localStorage.setItem('userData', JSON.stringify(data.user));
-        localStorage.setItem('authToken', data.access_token); // Store the actual JWT token
+        localStorage.setItem('authToken', data.access_token);
         setUser(data.user);
         return { success: true, user: data.user };
       } else {
@@ -63,6 +61,8 @@ export function useAuth() {
     loading,
     login,
     logout,
-    isAdmin: user?.role === 'admin',
+    isSuperAdmin: user?.role === 'SUPER_ADMIN',
+    isAdmin: user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN',
+    isUser: user?.role === 'USER',
   };
 }

@@ -5,18 +5,24 @@ export async function POST(request: Request) {
         const { message } = await request.json();
         const userMsg = message.toLowerCase();
 
-        let response = "I am currently in 'Offline Mode' to protect sensitive data. I can assist with general questions about the dashboard layout and features.";
+        let response = "I am your AGEL Data Assistant. I can help you with the Execution & Commissioning Tracker. You can ask about Solar/Wind status, User Roles, or how to use the dashboard.";
 
         if (userMsg.includes("hello") || userMsg.includes("hi")) {
-            response = "Hello! I am your AGEL Data Assistant. How can I help you navigate the dashboard today?";
+            response = "Hello! I am your AGEL Data Assistant. The current dashboard reflects data as on 31-Oct-2025. How can I help you today?";
         } else if (userMsg.includes("status") || userMsg.includes("summary")) {
-            response = "You can view the latest Commissioning Status in the 'Commissioning Status' page. The data currently reflects the FY 25-26 project lifecycle as of the latest update.";
+            response = "The Commissioning Status page provides a detailed breakdown of all projects. The AGEL Overall FY (1+2) summary is now at the top of the Overview section for quick reference.";
         } else if (userMsg.includes("solar")) {
-            response = "The Solar portfolio is divided into Khavda and Rajasthan projects. You can filter by these categories in the main dashboard for a detailed drill-down.";
+            response = "Solar projects are categorized into Khavda (A), Rajasthan (B), and Rajasthan Additional (C). You can see the technology mix and achievement in the main dashboard.";
         } else if (userMsg.includes("wind")) {
-            response = "The Wind portfolio includes Khavda and Mundra projects. Achievement is calculated based on cumulative capacity vs targets.";
+            response = "Wind portfolio achievement is calculated for Khavda and Mundra projects. You can switch the view to 'Cumulative' in the charts to see progress over time.";
         } else if (userMsg.includes("export") || userMsg.includes("download")) {
-            response = "You can export the current view to Excel using the 'Export' button located at the top of the Commissioning Status page.";
+            response = "You can export project data to Excel using the 'Export' button in the Commissioning Status page. It includes monthly phasing and quarterly totals.";
+        } else if (userMsg.includes("role") || userMsg.includes("login") || userMsg.includes("persona")) {
+            response = "The application now supports three roles: Super Admin (full control), Admin (editing & upload), and User (view-only). Access to the 'Reset Data' button is restricted to Super Admins.";
+        } else if (userMsg.includes("quarter") || userMsg.includes("q4")) {
+            response = "Quarterly results now correctly reflect 3 months each (e.g., Q4 includes Jan-Mar 2026). You can see future Q4 projections in both the status tables and trending charts.";
+        } else if (userMsg.includes("duplicate")) {
+            response = "I have implemented deduplication logic in the dashboard to ensure KPI cards and summaries are not inflated by duplicate entries in the source data.";
         }
 
         return NextResponse.json({ response }, { status: 200 });

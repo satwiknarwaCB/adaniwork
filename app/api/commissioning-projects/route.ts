@@ -29,15 +29,8 @@ export async function GET(request: Request) {
 
       const monthlySum = months.reduce((a, b) => a + b, 0);
 
-      // CRITICAL FIX: Row Total Logic per PDF Spec
-      // PLAN/REPHASE: totalCapacity = capacity (the project's planned capacity)
-      // ACTUAL: totalCapacity = sum of monthly values
-      let totalCapacity = proj.totalCapacity || 0;
-      if (proj.planActual === 'Plan' || proj.planActual === 'Rephase') {
-        totalCapacity = proj.capacity || 0;
-      } else {
-        totalCapacity = monthlySum;
-      }
+      // CRITICAL: Total Capacity must always be the sum of all monthly phasing (Q1+Q2+Q3+Q4)
+      const totalCapacity = monthlySum;
 
       // Calculate cummTillOct (Actually Apr-Nov as per spec)
       const cummTillNov = [

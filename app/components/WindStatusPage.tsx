@@ -1,13 +1,14 @@
 "use client";
 
-import React, { useState, useMemo, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, Legend
 } from 'recharts';
 import * as XLSX from 'xlsx';
+import { useAuth } from '@/lib/hooks/useAuth';
 
 // Interfaces
 interface CommissioningProject {
@@ -40,6 +41,75 @@ interface CommissioningProject {
     category: string;
     section: string;
     includedInTotal: boolean;
+}
+
+// Inline Editable Cell Component
+interface EditableCellProps {
+    project: CommissioningProject;
+    field: string;
+    value: number | null;
+    isEditing: boolean;
+    onEdit: () => void;
+    onSave: (value: number | null) => void;
+    onCancel: () => void;
+    formatNumber: (value: number | null) => string;
+    disabled: boolean;
+}
+
+function EditableCell({ value, isEditing, onEdit, onSave, onCancel, formatNumber, disabled }: EditableCellProps) {
+    const [tempValue, setTempValue] = useState(value?.toString() || '');
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (isEditing) {
+            setTempValue(value === null || value === undefined ? '' : value.toString());
+            setTimeout(() => inputRef.current?.focus(), 10);
+        }
+    }, [isEditing, value]);
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            const num = tempValue === '' ? null : parseFloat(tempValue);
+            onSave(num);
+        } else if (e.key === 'Escape') {
+            onCancel();
+        }
+    };
+
+    const handleBlur = () => {
+        const num = tempValue === '' ? null : parseFloat(tempValue);
+        if (num !== value) {
+            onSave(num);
+        } else {
+            onCancel();
+        }
+    };
+
+    if (isEditing) {
+        return (
+            <td className="px-1 py-1 border border-blue-500 shadow-inner bg-white">
+                <input
+                    ref={inputRef}
+                    type="number"
+                    step="0.1"
+                    value={tempValue}
+                    onChange={(e) => setTempValue(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    onBlur={handleBlur}
+                    className="w-full h-full text-center text-xs outline-none font-bold"
+                />
+            </td>
+        );
+    }
+
+    return (
+        <td
+            onClick={onEdit}
+            className={`px-2 py-2 text-right tabular-nums border-r border-gray-100 dark:border-gray-800 transition-colors cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 ${disabled ? 'opacity-30' : 'text-gray-700 dark:text-gray-300 font-medium'}`}
+        >
+            {formatNumber(value)}
+        </td>
+    );
 }
 
 interface GroupedProject {
@@ -84,11 +154,15 @@ const QUARTER_OPTIONS = [
 
 const WIND_SECTIONS = [
     { value: 'all', label: 'All Wind Projects' },
-    { value: 'Khavda Wind', label: 'A. Khavda Wind' },
-    { value: 'Mundra Wind', label: 'C. Mundra Wind' },
+    { value: 'A', label: 'A. Khavda Wind (Net)' },
+    { value: 'B', label: 'B. Khavda Wind Internal' },
+    { value: 'C', label: 'C. Mundra Wind' },
+    { value: 'D', label: 'D. Mundra Wind Internal' },
 ];
 
 export default function WindStatusPage() {
+    const queryClient = useQueryClient();
+    const { isAdmin } = useAuth();
     const fiscalYear = 'FY_25-26';
     const [selectedSection, setSelectedSection] = useState('all');
     const [viewMode, setViewMode] = useState<'quarterly' | 'monthly'>('quarterly');
@@ -96,6 +170,7 @@ export default function WindStatusPage() {
     const [selectedQuarter, setSelectedQuarter] = useState('all');
     const [showExportModal, setShowExportModal] = useState(false);
     const [exportMonths, setExportMonths] = useState<string[]>(ALL_MONTHS.map(m => m.key));
+    const [editingCell, setEditingCell] = useState<{ projectId: number, field: string } | null>(null);
 
     const { data: allProjects = [], isLoading } = useQuery<CommissioningProject[]>({
         queryKey: ['commissioning-projects', fiscalYear],
@@ -107,6 +182,38 @@ export default function WindStatusPage() {
         staleTime: 0,
     });
 
+    // Save changes mutation
+    const saveProjectsMutation = useMutation({
+        mutationFn: async (updatedProjects: CommissioningProject[]) => {
+            const response = await fetch('/api/commissioning-projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fiscalYear, projects: updatedProjects }),
+            });
+            if (!response.ok) throw new Error('Failed to save projects');
+            return response.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['commissioning-projects', fiscalYear] });
+        },
+    });
+
+    // Handle inline cell save
+    const handleCellSave = (project: CommissioningProject, field: string, value: number | null) => {
+        if (!isAdmin) {
+            alert('You do not have permission to modify project data. Please login as an Admin.');
+            setEditingCell(null); // Exit editing mode if not admin
+            return;
+        }
+        const updatedProject = { ...project, [field]: value };
+        const updatedProjects = allProjects.map((p: CommissioningProject) =>
+            p.id === project.id ? updatedProject : p
+        );
+
+        saveProjectsMutation.mutate(updatedProjects);
+        setEditingCell(null);
+    };
+
     // Get available quarters based on year selection
     const availableQuarters = useMemo(() => {
         if (selectedYear === 'all') return QUARTER_OPTIONS;
@@ -116,7 +223,7 @@ export default function WindStatusPage() {
     }, [selectedYear]);
 
     // Reset quarter when year changes if current quarter is invalid
-    useMemo(() => {
+    useEffect(() => {
         if (selectedYear === '2026' && !['all', 'Q4'].includes(selectedQuarter)) {
             setSelectedQuarter('all');
         }
@@ -145,7 +252,6 @@ export default function WindStatusPage() {
     // Filter only Wind projects
     const windProjects = useMemo(() => {
         return allProjects.filter(p =>
-            p.includedInTotal &&
             p.category?.toLowerCase().includes('wind')
         );
     }, [allProjects]);
@@ -155,13 +261,13 @@ export default function WindStatusPage() {
         let filtered = windProjects;
 
         if (selectedSection !== 'all') {
-            filtered = filtered.filter(p => p.category.includes(selectedSection));
+            filtered = filtered.filter(p => p.section === selectedSection);
         }
 
         const projectMap = new Map<string, GroupedProject>();
 
         filtered.forEach(p => {
-            const key = p.projectName;
+            const key = `${p.projectName}|${p.spv}|${p.section}`;
             if (!projectMap.has(key)) {
                 projectMap.set(key, {
                     projectName: p.projectName,
@@ -202,11 +308,12 @@ export default function WindStatusPage() {
         };
     }, []);
 
-    // Summary data for the table
+    // Summary data for the table - Only include projects marked for totals
     const summaryData = useMemo(() => {
-        const planProjects = windProjects.filter(p => p.planActual === 'Plan');
-        const rephaseProjects = windProjects.filter(p => p.planActual === 'Rephase');
-        const actualProjects = windProjects.filter(p => p.planActual === 'Actual');
+        const included = windProjects.filter(p => p.includedInTotal);
+        const planProjects = included.filter(p => p.planActual === 'Plan');
+        const rephaseProjects = included.filter(p => p.planActual === 'Rephase');
+        const actualProjects = included.filter(p => p.planActual === 'Actual');
 
         const filterByType = (projects: CommissioningProject[], type: string) =>
             projects.filter(p => p.projectType?.toLowerCase().includes(type));
@@ -233,16 +340,17 @@ export default function WindStatusPage() {
         };
     }, [windProjects, visibleMonths, calcRowData]);
 
-    // KPIs
+    // KPIs - Only include projects marked for total inclusion for high-level metrics
     const kpis = useMemo(() => {
-        const planProjects = windProjects.filter(p => p.planActual === 'Plan');
-        const actualProjects = windProjects.filter(p => p.planActual === 'Actual');
-        const rephaseProjects = windProjects.filter(p => p.planActual === 'Rephase');
+        const includedProjects = windProjects.filter(p => p.includedInTotal);
+        const planProjects = includedProjects.filter(p => p.planActual === 'Plan');
+        const actualProjects = includedProjects.filter(p => p.planActual === 'Actual');
+        const rephaseProjects = includedProjects.filter(p => p.planActual === 'Rephase');
 
         const totalPlan = planProjects.reduce((s, p) => s + (p.capacity || 0), 0);
         const totalActual = actualProjects.reduce((s, p) => s + (p.totalCapacity || 0), 0);
         const totalRephase = rephaseProjects.reduce((s, p) => s + (p.totalCapacity || 0), 0);
-        const projectCount = new Set(planProjects.map(p => p.projectName)).size;
+        const projectCount = new Set(windProjects.map(p => p.projectName)).size;
         const achievement = totalPlan > 0 ? (totalActual / totalPlan) * 100 : 0;
 
         return { totalPlan, totalActual, totalRephase, projectCount, achievement };
@@ -250,7 +358,7 @@ export default function WindStatusPage() {
 
     // Section-wise capacity breakdown
     const sectionData = useMemo(() => {
-        const planProjects = windProjects.filter(p => p.planActual === 'Plan');
+        const planProjects = windProjects.filter(p => p.planActual === 'Plan' && p.includedInTotal);
         return WIND_SECTIONS.slice(1).map(section => {
             const sectionProjects = planProjects.filter(p => p.category.includes(section.value));
             return {
@@ -292,8 +400,13 @@ export default function WindStatusPage() {
     }, [windProjects]);
 
     const formatNumber = (value: number | null | undefined): string => {
-        if (value === null || value === undefined || value === 0) return '0';
-        return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+        if (value === null || value === undefined) return '0';
+        // Round to 1 decimal place to avoid floating-point errors, then check if whole
+        const rounded = Math.round(value * 10) / 10;
+        if (Number.isInteger(rounded)) {
+            return rounded.toLocaleString();
+        }
+        return rounded.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
     };
 
     const handleExport = () => {
@@ -414,7 +527,7 @@ export default function WindStatusPage() {
                         </div>
                         <div>
                             <h1 className="text-2xl font-bold text-white">Wind Portfolio Dashboard</h1>
-                            <p className="text-white/80 text-sm">AGEL FY 2025-26 Wind Commissioning Status</p>
+                            <p className="text-white/80 text-sm"></p>
                         </div>
                     </div>
 
@@ -433,7 +546,7 @@ export default function WindStatusPage() {
                         </div>
                         <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4">
                             <p className="text-white/70 text-xs font-semibold uppercase tracking-wider">Achievement</p>
-                            <p className="text-2xl font-black text-white mt-1">{kpis.achievement.toFixed(1)}<span className="text-sm font-medium">%</span></p>
+                            <p className="text-2xl font-black text-white mt-1">{kpis.achievement.toFixed(2)}<span className="text-sm font-medium">%</span></p>
                         </div>
                         <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4">
                             <p className="text-white/70 text-xs font-semibold uppercase tracking-wider">Projects</p>
@@ -716,8 +829,8 @@ export default function WindStatusPage() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                            {groupedProjects.slice(0, 20).map((group, idx) => (
-                                <React.Fragment key={group.projectName}>
+                            {groupedProjects.map((group, idx) => (
+                                <React.Fragment key={`${group.projectName}-${idx}`}>
                                     {/* Plan Row */}
                                     <tr className="hover:bg-blue-50/30 dark:hover:bg-gray-700/30">
                                         <td className="px-3 py-2 text-gray-600 dark:text-gray-400 font-bold" rowSpan={3}>{idx + 1}</td>
@@ -727,9 +840,18 @@ export default function WindStatusPage() {
                                             <span className="inline-flex px-2 py-0.5 text-xs font-bold rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Plan</span>
                                         </td>
                                         {ALL_MONTHS.map(m => (
-                                            <td key={m.key} className="px-2 py-2 text-right text-gray-600 dark:text-gray-400 tabular-nums text-xs">
-                                                {formatNumber(group.plan ? (group.plan as any)[m.key] : 0)}
-                                            </td>
+                                            <EditableCell
+                                                key={m.key}
+                                                project={group.plan!}
+                                                field={m.key}
+                                                value={group.plan ? (group.plan as any)[m.key] : 0}
+                                                isEditing={editingCell?.projectId === group.plan?.id && editingCell?.field === m.key}
+                                                onEdit={() => group.plan && setEditingCell({ projectId: group.plan.id!, field: m.key })}
+                                                onSave={(val) => group.plan && handleCellSave(group.plan, m.key, val)}
+                                                onCancel={() => setEditingCell(null)}
+                                                formatNumber={formatNumber}
+                                                disabled={!group.plan || !isAdmin}
+                                            />
                                         ))}
                                         <td className="px-3 py-2 text-right font-bold text-blue-600 dark:text-blue-400">{formatNumber(group.plan?.totalCapacity)}</td>
                                     </tr>
@@ -739,9 +861,18 @@ export default function WindStatusPage() {
                                             <span className="inline-flex px-2 py-0.5 text-xs font-bold rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">Rephase</span>
                                         </td>
                                         {ALL_MONTHS.map(m => (
-                                            <td key={m.key} className="px-2 py-2 text-right text-gray-600 dark:text-gray-400 tabular-nums text-xs">
-                                                {formatNumber(group.rephase ? (group.rephase as any)[m.key] : 0)}
-                                            </td>
+                                            <EditableCell
+                                                key={m.key}
+                                                project={group.rephase!}
+                                                field={m.key}
+                                                value={group.rephase ? (group.rephase as any)[m.key] : 0}
+                                                isEditing={editingCell?.projectId === group.rephase?.id && editingCell?.field === m.key}
+                                                onEdit={() => group.rephase && setEditingCell({ projectId: group.rephase.id!, field: m.key })}
+                                                onSave={(val) => group.rephase && handleCellSave(group.rephase, m.key, val)}
+                                                onCancel={() => setEditingCell(null)}
+                                                formatNumber={formatNumber}
+                                                disabled={!group.rephase || !isAdmin}
+                                            />
                                         ))}
                                         <td className="px-3 py-2 text-right font-bold text-orange-600 dark:text-orange-400">{formatNumber(group.rephase?.totalCapacity)}</td>
                                     </tr>
@@ -751,9 +882,18 @@ export default function WindStatusPage() {
                                             <span className="inline-flex px-2 py-0.5 text-xs font-bold rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Actual/Fcst</span>
                                         </td>
                                         {ALL_MONTHS.map(m => (
-                                            <td key={m.key} className="px-2 py-2 text-right text-gray-600 dark:text-gray-400 tabular-nums text-xs">
-                                                {formatNumber(group.actual ? (group.actual as any)[m.key] : 0)}
-                                            </td>
+                                            <EditableCell
+                                                key={m.key}
+                                                project={group.actual!}
+                                                field={m.key}
+                                                value={group.actual ? (group.actual as any)[m.key] : 0}
+                                                isEditing={editingCell?.projectId === group.actual?.id && editingCell?.field === m.key}
+                                                onEdit={() => group.actual && setEditingCell({ projectId: group.actual.id!, field: m.key })}
+                                                onSave={(val) => group.actual && handleCellSave(group.actual, m.key, val)}
+                                                onCancel={() => setEditingCell(null)}
+                                                formatNumber={formatNumber}
+                                                disabled={!group.actual || !isAdmin}
+                                            />
                                         ))}
                                         <td className="px-3 py-2 text-right font-bold text-green-600 dark:text-green-400">{formatNumber(group.actual?.totalCapacity)}</td>
                                     </tr>

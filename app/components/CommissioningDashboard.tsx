@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -108,10 +108,10 @@ export default function CommissioningDashboard() {
     const [mainTimelineProject, setMainTimelineProject] = useState('All Projects');
     const [mainTimelineSPV, setMainTimelineSPV] = useState('All SPVs');
 
-    const [solarPhase, setSolarPhase] = useState('All Phases');
-    const [solarViewMode, setSolarViewMode] = useState('Target View');
-    const [windSPV, setWindSPV] = useState('All SPVs');
-    const [windMarket, setWindMarket] = useState('Growth View');
+    const [solarQMode, setSolarQMode] = useState('Absolute');
+    const [solarMMode, setSolarMMode] = useState('Monthly');
+    const [windQMode, setWindQMode] = useState('Absolute');
+    const [windMMode, setWindMMode] = useState('Monthly');
     const [modelMetric, setModelMetric] = useState('Capacity Share');
     const [modelDrill, setModelDrill] = useState('Project Select');
 
@@ -124,7 +124,13 @@ export default function CommissioningDashboard() {
     const [techMixStatus, setTechMixStatus] = useState('All Projects');
     const [techMixProject, setTechMixProject] = useState('All Projects');
     const [techMixCategory, setTechMixCategory] = useState('All Categories');
+    const [techMixView, setTechMixView] = useState('yearly');
     const [techMixHovered, setTechMixHovered] = useState<any>(null);
+
+    // Business Model Split Chart - separate state
+    const [bizModelCategory, setBizModelCategory] = useState('All Categories');
+    const [bizModelProject, setBizModelProject] = useState('All Projects');
+    const [bizModelView, setBizModelView] = useState('yearly');
 
     // Business Model Filter for charts
     const [businessModelFilter, setBusinessModelFilter] = useState('All Models');
@@ -142,19 +148,40 @@ export default function CommissioningDashboard() {
     // Models Dashboard
     const [modelsCategory, setModelsCategory] = useState('All Categories');
     const [modelsTechnology, setModelsTechnology] = useState('All');
+    const [modelsProject, setModelsProject] = useState('All Projects');
 
     // KPI scope derived from global category filter
     const globalKpiScope = categoryFilter === 'all' ? 'Overall' : categoryFilter === 'solar' ? 'Solar' : 'Wind';
+    // Convert display FY (2025-26) to API format (FY_25-26)
+    const apiFiscalYear = useMemo(() => {
+        // "2025-26" -> "FY_25-26"
+        const parts = selectedFY.split('-');
+        if (parts.length === 2) {
+            return `FY_${parts[0].slice(-2)}-${parts[1]}`;
+        }
+        return selectedFY;
+    }, [selectedFY]);
 
-    const { data: allProjects = [], isLoading } = useQuery<CommissioningProject[]>({
-        queryKey: ['commissioning-projects', fiscalYear],
+    const { data: rawProjects = [], isLoading } = useQuery<CommissioningProject[]>({
+        queryKey: ['commissioning-projects', apiFiscalYear],
         queryFn: async () => {
-            const response = await fetch(`/api/commissioning-projects?fiscalYear=${fiscalYear}`);
+            const response = await fetch(`/api/commissioning-projects?fiscalYear=${apiFiscalYear}`);
             if (!response.ok) throw new Error('Failed to fetch projects');
             return response.json();
         },
-        staleTime: 0, // Always fetch fresh data when navigating
+        staleTime: 0,
     });
+
+    // Deduplicate projects to prevent card inflation
+    const allProjects = useMemo(() => {
+        const seen = new Set();
+        return rawProjects.filter(p => {
+            const key = `${p.projectName}-${p.spv}-${p.category}-${p.section}-${p.planActual}-${p.capacity}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }, [rawProjects]);
 
     const filteredProjects = useMemo(() => {
         return allProjects.filter(p => {
@@ -168,7 +195,7 @@ export default function CommissioningDashboard() {
         });
     }, [allProjects, categoryFilter, selectedSections, selectedModels]);
 
-    const getKPIData = (scope: string) => {
+    const getKPIData = useCallback((scope: string) => {
         let projs = allProjects.filter(p => p.includedInTotal);
         if (scope === 'Solar') projs = projs.filter(p => p.category?.toLowerCase().includes('solar'));
         if (scope === 'Wind') projs = projs.filter(p => p.category?.toLowerCase().includes('wind'));
@@ -179,14 +206,14 @@ export default function CommissioningDashboard() {
         const projectsCount = new Set(projs.filter(p => p.planActual === 'Plan').map(p => p.projectName)).size;
 
         return { plan, actual, projectsCount, achievement: plan > 0 ? (actual / plan) * 100 : 0 };
-    };
+    }, [allProjects]);
 
-    const overallKpi = getKPIData('Overall');
+    const overallKpi = useMemo(() => getKPIData('Overall'), [getKPIData]);
     // All KPIs now use the same scope from global filter
-    const kpi1 = getKPIData(globalKpiScope);
-    const kpi2 = getKPIData(globalKpiScope);
-    const kpi3 = getKPIData(globalKpiScope);
-    const kpi4 = getKPIData(globalKpiScope);
+    const kpi1 = useMemo(() => getKPIData(globalKpiScope), [getKPIData, globalKpiScope]);
+    const kpi2 = useMemo(() => getKPIData(globalKpiScope), [getKPIData, globalKpiScope]);
+    const kpi3 = useMemo(() => getKPIData(globalKpiScope), [getKPIData, globalKpiScope]);
+    const kpi4 = useMemo(() => getKPIData(globalKpiScope), [getKPIData, globalKpiScope]);
 
     // Category Options - pulled from actual project data
     const categoryOptions = useMemo(() => {
@@ -254,9 +281,9 @@ export default function CommissioningDashboard() {
             const key = `q${idx + 1}` as 'q1' | 'q2' | 'q3' | 'q4';
             return {
                 name: q,
-                'PPA Plan': filteredTimelineProjects.filter(p => p.planActual === 'Plan').reduce((s, p) => s + (p[key] || 0), 0),
-                'Actual Commissioning': filteredTimelineProjects.filter(p => p.planActual === 'Actual').reduce((s, p) => s + (p[key] || 0), 0),
-                'Rephase Strategy': filteredTimelineProjects.filter(p => p.planActual === 'Rephase').reduce((s, p) => s + (p[key] || 0), 0),
+                'PPA Plan': filteredTimelineProjects.filter(p => p.planActual === 'Plan').reduce((s, p) => s + ((p as any)[key] || 0), 0),
+                'Actual Commissioning': filteredTimelineProjects.filter(p => p.planActual === 'Actual').reduce((s, p) => s + ((p as any)[key] || 0), 0),
+                'Rephase Strategy': filteredTimelineProjects.filter(p => p.planActual === 'Rephase').reduce((s, p) => s + ((p as any)[key] || 0), 0),
             };
         });
     }, [filteredTimelineProjects]);
@@ -291,18 +318,18 @@ export default function CommissioningDashboard() {
             actual = projs.filter(p => p.planActual === 'Actual').reduce((s, p) => s + (p.totalCapacity || 0), 0);
             periodName = 'Full FY';
         } else if (achieveView === 'half-yearly') {
-            // H2: Oct-Mar
+            // H2: Oct-Mar (Current Half)
             const months = ['oct', 'nov', 'dec', 'jan', 'feb', 'mar'];
             plan = projs.filter(p => p.planActual === 'Plan').reduce((s, p) => s + months.reduce((ms, m) => ms + ((p as any)[m] || 0), 0), 0);
             actual = projs.filter(p => p.planActual === 'Actual').reduce((s, p) => s + months.reduce((ms, m) => ms + ((p as any)[m] || 0), 0), 0);
             periodName = 'H2 (Oct-Mar)';
         } else if (achieveView === 'quarterly') {
-            // Q3: Oct-Dec
+            // Q3: Oct-Dec (Current Quarter)
             plan = projs.filter(p => p.planActual === 'Plan').reduce((s, p) => s + (p.q3 || 0), 0);
             actual = projs.filter(p => p.planActual === 'Actual').reduce((s, p) => s + (p.q3 || 0), 0);
             periodName = 'Q3 (Oct-Dec)';
         } else if (achieveView === 'monthly') {
-            // October
+            // October (Current Month)
             plan = projs.filter(p => p.planActual === 'Plan').reduce((s, p) => s + (p.oct || 0), 0);
             actual = projs.filter(p => p.planActual === 'Actual').reduce((s, p) => s + (p.oct || 0), 0);
             periodName = 'October 2025';
@@ -332,8 +359,18 @@ export default function CommissioningDashboard() {
                 return isCompleted ? (actual?.totalCapacity || 0) >= p.capacity : (actual?.totalCapacity || 0) < p.capacity;
             });
         }
-        const solar = projects.filter(p => p.category?.toLowerCase().includes('solar')).reduce((s, p) => s + (p.capacity || 0), 0);
-        const wind = projects.filter(p => p.category?.toLowerCase().includes('wind')).reduce((s, p) => s + (p.capacity || 0), 0);
+
+        // Calculate based on period view
+        const getValueByPeriod = (p: CommissioningProject) => {
+            if (techMixView === 'yearly') return p.capacity || 0;
+            if (techMixView === 'half-yearly') return (p.q1 || 0) + (p.q2 || 0); // Shows H1
+            if (techMixView === 'quarterly') return p.q3 || 0; // Shows current Q3
+            if (techMixView === 'monthly') return p.oct || 0; // Shows current Oct
+            return p.capacity || 0;
+        };
+
+        const solar = projects.filter(p => p.category?.toLowerCase().includes('solar')).reduce((s, p) => s + getValueByPeriod(p), 0);
+        const wind = projects.filter(p => p.category?.toLowerCase().includes('wind')).reduce((s, p) => s + getValueByPeriod(p), 0);
 
         return {
             data: [
@@ -342,17 +379,45 @@ export default function CommissioningDashboard() {
             ].filter(d => d.value > 0),
             total: solar + wind
         };
-    }, [allProjects, techMixProject, techMixStatus, techMixCategory]);
+    }, [allProjects, techMixProject, techMixStatus, techMixCategory, techMixView]);
 
 
     const modelSplitData = useMemo(() => {
-        const planProjects = filteredProjects.filter(p => p.planActual === 'Plan');
+        let projects = allProjects.filter(p => p.planActual === 'Plan' && p.includedInTotal);
+
+        // If we are in the dedicated models tab, use those specific filters
+        if (activeDashboard === 'models') {
+            if (modelsTechnology !== 'All') {
+                projects = projects.filter(p => p.category?.toLowerCase().includes(modelsTechnology.toLowerCase()));
+            }
+            projects = filterByCategory(projects, modelsCategory);
+            if (modelsProject !== 'All Projects') {
+                projects = projects.filter(p => p.projectName === modelsProject);
+            }
+        } else {
+            // Otherwise use the overview ones
+            projects = filterByCategory(projects, bizModelCategory);
+            if (bizModelProject !== 'All Projects') {
+                projects = projects.filter(p => p.projectName === bizModelProject);
+            }
+        }
+
+        const getValueByPeriod = (p: CommissioningProject) => {
+            if (bizModelView === 'yearly') return p.capacity || 0;
+            if (bizModelView === 'half-yearly') return (p.q1 || 0) + (p.q2 || 0);
+            if (bizModelView === 'quarterly') return p.q3 || 0; // Changed from q1 to q3
+            if (bizModelView === 'monthly') return p.oct || 0; // Changed from apr to oct
+            return p.capacity || 0;
+        };
+
+        const metric = activeDashboard === 'models' ? modelMetric : 'Capacity Share';
+
         return [
-            { name: 'PPA', value: planProjects.filter(p => p.projectType === 'PPA').reduce((s, p) => s + (p.capacity || 0), 0), color: '#8B5CF6' },
-            { name: 'Merchant', value: planProjects.filter(p => p.projectType === 'Merchant').reduce((s, p) => s + (p.capacity || 0), 0), color: '#EC4899' },
-            { name: 'Group', value: planProjects.filter(p => p.projectType === 'Group').reduce((s, p) => s + (p.capacity || 0), 0), color: '#14B8A6' },
+            { name: 'PPA', value: projects.filter(p => p.projectType === 'PPA').reduce((s, p) => s + (metric === 'Project Count' ? 1 : getValueByPeriod(p)), 0), color: '#8B5CF6' },
+            { name: 'Merchant', value: projects.filter(p => p.projectType === 'Merchant').reduce((s, p) => s + (metric === 'Project Count' ? 1 : getValueByPeriod(p)), 0), color: '#EC4899' },
+            { name: 'Group', value: projects.filter(p => p.projectType === 'Group').reduce((s, p) => s + (metric === 'Project Count' ? 1 : getValueByPeriod(p)), 0), color: '#14B8A6' },
         ].filter(d => d.value > 0);
-    }, [filteredProjects]);
+    }, [allProjects, bizModelCategory, bizModelProject, bizModelView, modelsTechnology, modelsCategory, modelsProject, activeDashboard, modelMetric]);
 
     const cumulativeData = useMemo(() => {
         let cumPlan = 0;
@@ -369,56 +434,159 @@ export default function CommissioningDashboard() {
     }, [monthlyData]);
 
     const solarData = useMemo(() => {
-        const solarProjects = allProjects.filter(p => p.includedInTotal && p.category && p.category.toLowerCase().includes('solar'));
+        let solarProjects = allProjects.filter(p => p.includedInTotal && p.category && p.category.toLowerCase().includes('solar'));
+        solarProjects = filterByCategory(solarProjects, solarCategory);
+        if (solarBusinessModel !== 'All Models') {
+            solarProjects = solarProjects.filter(p => p.projectType === solarBusinessModel);
+        }
+        if (!selectedSections.includes('all')) {
+            solarProjects = solarProjects.filter(p => selectedSections.includes(p.category));
+        }
+
         const planProjects = solarProjects.filter(p => p.planActual === 'Plan');
         const actualProjects = solarProjects.filter(p => p.planActual === 'Actual');
         const totalPlan = planProjects.reduce((s, p) => s + (p.capacity || 0), 0);
         const totalActual = actualProjects.reduce((s, p) => s + (p.totalCapacity || 0), 0);
-        const quarterly = ['Q1', 'Q2', 'Q3', 'Q4'].map((q, idx) => {
+
+        const quarterlyAbs = ['Q1', 'Q2', 'Q3', 'Q4'].map((q, idx) => {
             const key = `q${idx + 1}` as 'q1' | 'q2' | 'q3' | 'q4';
             return {
                 name: q,
-                'PPA Plan': planProjects.reduce((s, p) => s + (p[key] || 0), 0),
-                'Actual Commissioning': actualProjects.reduce((s, p) => s + (p[key] || 0), 0),
+                'PPA Plan': planProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
+                'Actual Commissioning': actualProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
             };
         });
-        const monthly = monthKeys.map((key, idx) => ({
+
+        const monthlyAbs = monthKeys.map((key, idx) => ({
             name: monthLabels[idx],
             'PPA Plan': planProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
             'Actual Commissioning': actualProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
         }));
-        return { totalPlan, totalActual, quarterly, monthly, projectCount: new Set(planProjects.map(p => p.projectName)).size };
-    }, [allProjects]);
+
+        // Cumulative transforms
+        let cPQ = 0, cAQ = 0;
+        const quarterlyCum = quarterlyAbs.map(d => ({
+            name: d.name,
+            'PPA Plan': (cPQ += d['PPA Plan']),
+            'Actual Commissioning': (cAQ += d['Actual Commissioning'])
+        }));
+
+        let cPM = 0, cAM = 0;
+        const monthlyCum = monthlyAbs.map(d => ({
+            name: d.name,
+            'PPA Plan': (cPM += d['PPA Plan']),
+            'Actual Commissioning': (cAM += d['Actual Commissioning'])
+        }));
+
+        return {
+            totalPlan, totalActual,
+            quarterly: solarQMode === 'Absolute' ? quarterlyAbs : quarterlyCum,
+            monthly: solarMMode === 'Monthly' ? monthlyAbs : monthlyCum,
+            projectCount: new Set(planProjects.map(p => p.projectName)).size
+        };
+    }, [allProjects, solarCategory, solarBusinessModel, selectedSections, solarQMode, solarMMode]);
 
     const windData = useMemo(() => {
-        const windProjects = allProjects.filter(p => p.includedInTotal && p.category && p.category.toLowerCase().includes('wind'));
+        let windProjects = allProjects.filter(p => p.includedInTotal && p.category && p.category.toLowerCase().includes('wind'));
+        windProjects = filterByCategory(windProjects, windCategory);
+        if (windBusinessModel !== 'All Models') {
+            windProjects = windProjects.filter(p => p.projectType === windBusinessModel);
+        }
+        if (!selectedSections.includes('all')) {
+            windProjects = windProjects.filter(p => selectedSections.includes(p.section));
+        }
+
         const planProjects = windProjects.filter(p => p.planActual === 'Plan');
         const actualProjects = windProjects.filter(p => p.planActual === 'Actual');
         const totalPlan = planProjects.reduce((s, p) => s + (p.capacity || 0), 0);
         const totalActual = actualProjects.reduce((s, p) => s + (p.totalCapacity || 0), 0);
-        const quarterly = ['Q1', 'Q2', 'Q3', 'Q4'].map((q, idx) => {
+
+        const quarterlyAbs = ['Q1', 'Q2', 'Q3', 'Q4'].map((q, idx) => {
             const key = `q${idx + 1}` as 'q1' | 'q2' | 'q3' | 'q4';
             return {
                 name: q,
-                'PPA Plan': planProjects.reduce((s, p) => s + (p[key] || 0), 0),
-                'Actual Commissioning': actualProjects.reduce((s, p) => s + (p[key] || 0), 0),
+                'PPA Plan': planProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
+                'Actual Commissioning': actualProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
             };
         });
-        const monthly = monthKeys.map((key, idx) => ({
+
+        const monthlyAbs = monthKeys.map((key, idx) => ({
             name: monthLabels[idx],
             'PPA Plan': planProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
             'Actual Commissioning': actualProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
         }));
-        return { totalPlan, totalActual, quarterly, monthly, projectCount: new Set(planProjects.map(p => p.projectName)).size };
-    }, [allProjects]);
+
+        // Cumulative transforms
+        let cPQ = 0, cAQ = 0;
+        const quarterlyCum = quarterlyAbs.map(d => ({
+            name: d.name,
+            'PPA Plan': (cPQ += d['PPA Plan']),
+            'Actual Commissioning': (cAQ += d['Actual Commissioning'])
+        }));
+
+        let cPM = 0, cAM = 0;
+        const monthlyCum = monthlyAbs.map(d => ({
+            name: d.name,
+            'PPA Plan': (cPM += d['PPA Plan']),
+            'Actual Commissioning': (cAM += d['Actual Commissioning'])
+        }));
+
+        return {
+            totalPlan, totalActual,
+            quarterly: windQMode === 'Absolute' ? quarterlyAbs : quarterlyCum,
+            monthly: windMMode === 'Monthly' ? monthlyAbs : monthlyCum,
+            projectCount: new Set(planProjects.map(p => p.projectName)).size
+        };
+    }, [allProjects, windCategory, windBusinessModel, selectedSections, windQMode, windMMode]);
 
     const deviationChartData = useMemo(() => {
-        const sourceData = deviationView === 'monthly' ? monthlyData : deviationView === 'half-yearly' ? halfYearlyData : quarterlyData;
-        return sourceData.map(q => ({
+        let projects = allProjects;
+
+        // Apply Global Category Slicer (Solar/Wind)
+        if (categoryFilter !== 'all') {
+            projects = projects.filter(p => p.category?.toLowerCase().includes(categoryFilter));
+        }
+
+        // Apply Timeline specific filters
+        projects = filterByCategory(projects, timelineCategory);
+        projects = filterByBusinessModel(projects, timelineBusinessModel);
+
+        const planProjects = projects.filter(p => p.planActual === 'Plan' && p.includedInTotal);
+        const actualProjects = projects.filter(p => p.planActual === 'Actual' && p.includedInTotal);
+
+        const getSourceData = () => {
+            if (deviationView === 'monthly') {
+                return monthKeys.map((key, idx) => ({
+                    name: monthLabels[idx],
+                    'PPA Plan': planProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
+                    'Actual Commissioning': actualProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
+                }));
+            }
+            if (deviationView === 'half-yearly') {
+                return ['H1', 'H2'].map((h, idx) => {
+                    const keys = idx === 0 ? ['q1', 'q2'] : ['q3', 'q4'];
+                    return {
+                        name: h,
+                        'PPA Plan': planProjects.reduce((s, p) => s + ((p as any)[keys[0]] || 0) + ((p as any)[keys[1]] || 0), 0),
+                        'Actual Commissioning': actualProjects.reduce((s, p) => s + ((p as any)[keys[0]] || 0) + ((p as any)[keys[1]] || 0), 0),
+                    };
+                });
+            }
+            return ['Q1', 'Q2', 'Q3', 'Q4'].map((q, idx) => {
+                const key = `q${idx + 1}` as 'q1' | 'q2' | 'q3' | 'q4';
+                return {
+                    name: q,
+                    'PPA Plan': planProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
+                    'Actual Commissioning': actualProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
+                };
+            });
+        }
+
+        return getSourceData().map(q => ({
             name: q.name,
             Deviation: (q as any)['Actual Commissioning'] - (q as any)['PPA Plan'],
         }));
-    }, [quarterlyData, monthlyData, halfYearlyData, deviationView]);
+    }, [allProjects, categoryFilter, timelineCategory, timelineBusinessModel, deviationView]);
 
     const criticalProjects = useMemo(() => {
         const planProjects = allProjects.filter(p => p.planActual === 'Plan' && p.includedInTotal);
@@ -452,10 +620,10 @@ export default function CommissioningDashboard() {
                         </div>
                         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
                             <h1 className="text-base sm:text-lg font-semibold text-[#1F2937] dark:text-white whitespace-nowrap">
-                                AGEL Tracker
+                                Commissioning Tracker
                             </h1>
                             <div className="flex items-center gap-2 px-2 py-1 dark:bg-gray-800 rounded-md h-8">
-                                <span className="text-xs font-medium text-[#4B5563] dark:text-gray-400 whitespace-nowrap pt-[2px]">Fiscal Year</span>
+                                <span className="text-xs font-medium text-[#4B5563] dark:text-gray-400 whitespace-nowrap pt-[2px]">FY</span>
                                 <CardSelect
                                     label=""
                                     options={['2024-25', '2025-26', '2026-27']}
@@ -466,13 +634,21 @@ export default function CommissioningDashboard() {
                         </div>
                     </div>
 
-                    {/* Right: Category Filter */}
-                    <GlobalSlicer
-                        label=""
-                        options={['All', 'Solar', 'Wind']}
-                        value={categoryFilter}
-                        onChange={(v: string) => setCategoryFilter(v.toLowerCase() as any)}
-                    />
+                    {/* Right: Category Filter - Horizontal Toggle */}
+                    <div className="flex items-center h-8 bg-[#F3F4F6] dark:bg-gray-800 p-1 rounded-lg border border-[#D1D5DB] dark:border-gray-700">
+                        {['All', 'Solar', 'Wind'].map((option) => (
+                            <button
+                                key={option}
+                                onClick={() => setCategoryFilter(option.toLowerCase() as 'all' | 'solar' | 'wind')}
+                                className={`h-full px-4 rounded-md text-xs font-semibold transition-all ${categoryFilter === option.toLowerCase()
+                                    ? 'bg-[#0B74B0] text-white shadow-sm'
+                                    : 'text-[#4B5563] dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700'
+                                    }`}
+                            >
+                                {option}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Navigation Tabs - Clean aligned style */}
@@ -482,12 +658,17 @@ export default function CommissioningDashboard() {
                             { id: 'overview', label: 'Overview' },
                             { id: 'solar', label: 'Solar' },
                             { id: 'wind', label: 'Wind' },
-                            { id: 'models', label: 'Models' },
-                            { id: 'deviation', label: 'Deviations' }
+                            { id: 'models', label: 'Models' }
                         ].map(tab => (
                             <button
                                 key={tab.id}
-                                onClick={() => setActiveDashboard(tab.id as any)}
+                                onClick={() => {
+                                    setActiveDashboard(tab.id as any);
+                                    // Also update categoryFilter to match the tab
+                                    if (tab.id === 'solar') setCategoryFilter('solar');
+                                    else if (tab.id === 'wind') setCategoryFilter('wind');
+                                    else if (tab.id === 'overview') setCategoryFilter('all');
+                                }}
                                 className={`h-8 px-3 sm:px-4 rounded-md text-xs font-medium transition-all flex items-center whitespace-nowrap ${activeDashboard === tab.id
                                     ? 'bg-[#0B74B0] text-white shadow-sm'
                                     : 'text-[#4B5563] dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-[#1F2937]'}`}
@@ -499,36 +680,54 @@ export default function CommissioningDashboard() {
                 </div>
             </div>
 
-            {/* KPI Section */}
+            {/* KPI Section with Precise Math - No subjective labels */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
                 <KPICard
-                    label="PPA PORTFOLIO PLAN"
+                    label="PPA PORTFOLIO TARGET"
                     value={kpi1.plan}
                     unit="MW"
-                    trend={`Total: ${kpi1.projectsCount} Projects`}
+                    trend={`Base: ${kpi1.projectsCount} Project Segments`}
                     gradient="from-blue-600 to-indigo-700"
                 />
                 <KPICard
                     label="ACTUAL COMMISSIONING"
                     value={kpi2.actual}
                     unit="MW"
-                    trend={`${kpi2.achievement.toFixed(4)}% of Plan`}
+                    trend={`Actual vs Target Phasing`}
                     gradient="from-emerald-500 to-teal-600"
                 />
                 <KPICard
                     label="STATUS PERFORMANCE"
-                    value={kpi3.achievement}
+                    value={kpi3.achievement.toFixed(2)}
                     unit="%"
-                    trend={kpi3.achievement > 70 ? "Excellent" : "On Track"}
+                    trend={`Actual / Plan Target (FY)`}
                     gradient="from-indigo-500 to-purple-600"
                 />
                 <KPICard
                     label="EXECUTION DEVIATION"
                     value={kpi4.actual - kpi4.plan}
                     unit="MW"
-                    trend={kpi4.actual >= kpi4.plan ? "Above Target" : "Below Target"}
+                    trend={`Delta: Actual - Plan`}
                     gradient={kpi4.actual >= kpi4.plan ? "from-emerald-400 to-emerald-600" : "from-rose-500 to-red-700"}
                 />
+            </div>
+
+            {/* Transparency Section: Business Logic */}
+            <div className="bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-xl p-3 flex flex-wrap gap-4 items-center justify-between shadow-sm">
+                <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
+                        <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    </div>
+                    <div>
+                        <h4 className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest leading-none">Measurement Logic</h4>
+                        <p className="text-[11px] text-gray-600 dark:text-gray-300 mt-1 font-medium">All metrics derived strictly from the provided Excel. No rounding or manual adjustments applied.</p>
+                    </div>
+                </div>
+                <div className="flex flex-wrap gap-x-6 gap-y-2 text-[10px] font-bold text-[#0B74B0] dark:text-blue-400 uppercase tracking-wide">
+                    <span>% Achievement = (Actual ÷ Plan) × 100</span>
+                    <span>Technology Mix = (Value ÷ Total Capacity) × 100</span>
+                    <span>Execution Deviation = Actual - Plan Target</span>
+                </div>
             </div>
 
             {/* Section Divider */}
@@ -542,23 +741,25 @@ export default function CommissioningDashboard() {
 
             <div className="space-y-4 w-full">
                 {activeDashboard === 'overview' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 w-full">
-                        {/* Left Column - Gauge and Tech Mix */}
-                        <div className="space-y-4">
+                    <div className="space-y-4 w-full">
+                        {/* Row 1: Three Pie Charts */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {/* Pie Chart 1: Achievement Gauge */}
                             <ChartContainer
                                 title={`${achieveCategory === 'All Categories' ? 'Overall' : achieveCategory} Achievement`}
                                 controls={
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <CardSelect label="" options={categoryOptions} value={achieveCategory} onChange={setAchieveCategory} />
-                                        <CardSelect label="" options={projectOptions} value={achieveProject} onChange={setAchieveProject} />
-                                        <div className="hidden sm:block w-px h-6 bg-gray-200 dark:bg-gray-700" />
+                                    <div className="flex flex-col gap-1.5 items-end relative z-[60]">
+                                        <div className="flex items-center gap-1">
+                                            <CardSelect label="" options={categoryOptions} value={achieveCategory} onChange={setAchieveCategory} />
+                                            <CardSelect label="" options={projectOptions} value={achieveProject} onChange={setAchieveProject} />
+                                        </div>
                                         <ViewPivot active={achieveView} onChange={setAchieveView} label="" />
                                     </div>
                                 }
                             >
                                 <div className="mb-2 text-center">
                                     <span className="text-[10px] font-bold text-[#0B74B0] dark:text-blue-400 uppercase tracking-widest bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full border border-blue-100 dark:border-blue-800 shadow-sm inline-block">
-                                        {gaugeData.periodName} Target: {gaugeData.plan.toLocaleString(undefined, { maximumFractionDigits: 4 })} MW
+                                        {gaugeData.periodName} Target: {gaugeData.plan.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} MW
                                     </span>
                                 </div>
                                 <div className="h-[180px] relative">
@@ -572,36 +773,39 @@ export default function CommissioningDashboard() {
                                     <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none p-4 text-center">
                                         <div className="flex flex-col items-center leading-tight">
                                             <span className="text-3xl font-black text-[#1F2937] dark:text-white">
-                                                {gaugeData.achievement.toFixed(4)}
+                                                {gaugeData.achievement.toFixed(1)}
                                                 <span className="text-sm ml-0.5 font-bold text-gray-400">%</span>
                                             </span>
                                             <span className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] mt-0.5">Achievement</span>
                                         </div>
                                         <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-800 w-24 flex flex-col items-center">
-                                            <span className="text-[12px] font-bold text-[#10B981]">{gaugeData.actual.toLocaleString(undefined, { maximumFractionDigits: 4 })} MW</span>
-                                            <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">Actually Achieved</span>
+                                            <span className="text-[12px] font-bold text-[#10B981]">{gaugeData.actual.toLocaleString(undefined, { maximumFractionDigits: 1 })} MW</span>
+                                            <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">Achieved</span>
                                         </div>
                                     </div>
                                 </div>
                             </ChartContainer>
 
+                            {/* Pie Chart 2: Technology Mix (Solar vs Wind) */}
                             <ChartContainer
-                                title={`${techMixCategory === 'All Categories' ? 'Overall' : techMixCategory} Technology Mix`}
+                                title="Technology Mix"
                                 controls={
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <CardSelect label="" options={categoryOptions} value={techMixCategory} onChange={setTechMixCategory} />
-                                        <CardSelect label="" options={projectOptions} value={techMixProject} onChange={setTechMixProject} />
-                                        <CardSelect label="" options={businessModelOptions} value={businessModelFilter} onChange={setBusinessModelFilter} />
+                                    <div className="flex flex-col gap-1.5 items-end relative z-[60]">
+                                        <div className="flex items-center gap-1">
+                                            <CardSelect label="" options={categoryOptions} value={techMixCategory} onChange={setTechMixCategory} />
+                                            <CardSelect label="" options={projectOptions} value={techMixProject} onChange={setTechMixProject} />
+                                        </div>
+                                        <ViewPivot active={techMixView} onChange={setTechMixView} label="" />
                                     </div>
                                 }
                             >
-                                <div className="h-[160px] relative">
+                                <div className="h-[180px] relative">
                                     <ResponsiveContainer width="100%" height="100%">
                                         <PieChart>
                                             <Pie
                                                 data={techSplitData.data}
-                                                innerRadius={50}
-                                                outerRadius={70}
+                                                innerRadius={55}
+                                                outerRadius={75}
                                                 dataKey="value"
                                                 stroke="none"
                                                 animationBegin={0}
@@ -625,28 +829,81 @@ export default function CommissioningDashboard() {
                                     </ResponsiveContainer>
                                     <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                                         <span className="text-xl font-bold text-gray-800 dark:text-white leading-none">
-                                            {(techMixHovered ? techMixHovered.value : techSplitData.total).toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                                            {(techMixHovered ? techMixHovered.value : techSplitData.total).toLocaleString(undefined, { maximumFractionDigits: 1 })}
                                         </span>
                                         <span className="text-[8px] font-semibold text-gray-400 uppercase mt-0.5">
                                             {techMixHovered ? techMixHovered.name : "Total MW"}
                                         </span>
                                     </div>
                                 </div>
-                                {/* Technology breakdown */}
-                                <div className="flex justify-center gap-4 mt-2">
+                                {/* Legend */}
+                                <div className="flex justify-center gap-6 mt-2">
                                     {techSplitData.data.map(d => {
                                         const perc = techSplitData.total > 0 ? (d.value / techSplitData.total) * 100 : 0;
                                         return (
-                                            <div
-                                                key={d.name}
-                                                className={`flex flex-col items-center transition-all ${techMixHovered && techMixHovered.name !== d.name ? 'opacity-30' : 'opacity-100'}`}
-                                            >
+                                            <div key={d.name} className={`flex flex-col items-center transition-all ${techMixHovered && techMixHovered.name !== d.name ? 'opacity-30' : 'opacity-100'}`}>
                                                 <div className="flex items-center gap-1 mb-0.5">
                                                     <div className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
                                                     <span className="text-[9px] font-semibold text-gray-500 uppercase">{d.name}</span>
                                                 </div>
-                                                <span className="text-xs font-bold text-gray-900 dark:text-white">{d.value.toLocaleString(undefined, { maximumFractionDigits: 4 })} MW</span>
-                                                <span className="text-[9px] font-medium text-[#0B74B0]">{perc.toFixed(4)}%</span>
+                                                <span className="text-xs font-bold text-gray-900 dark:text-white">{perc.toFixed(1)}%</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </ChartContainer>
+
+                            {/* Pie Chart 3: Business Model Split (PPA / Merchant / Group) */}
+                            <ChartContainer
+                                title="Business Model Split"
+                                controls={
+                                    <div className="flex flex-col gap-1.5 items-end relative z-[60]">
+                                        <div className="flex items-center gap-1">
+                                            <CardSelect label="" options={categoryOptions} value={bizModelCategory} onChange={setBizModelCategory} />
+                                            <CardSelect label="" options={projectOptions} value={bizModelProject} onChange={setBizModelProject} />
+                                        </div>
+                                        <ViewPivot active={bizModelView} onChange={setBizModelView} label="" />
+                                    </div>
+                                }
+                            >
+                                <div className="h-[180px] relative">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <PieChart>
+                                            <Pie
+                                                data={modelSplitData}
+                                                innerRadius={55}
+                                                outerRadius={75}
+                                                dataKey="value"
+                                                stroke="none"
+                                                animationBegin={0}
+                                                animationDuration={800}
+                                            >
+                                                {modelSplitData.map((e, i) => (
+                                                    <Cell key={i} fill={e.color} style={{ filter: 'url(#shadow)' }} />
+                                                ))}
+                                            </Pie>
+                                            <Tooltip formatter={(v: any) => `${v.toLocaleString(undefined, { maximumFractionDigits: 1 })} MW`} />
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                        <span className="text-xl font-bold text-gray-800 dark:text-white leading-none">
+                                            {modelSplitData.reduce((s, d) => s + d.value, 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                                        </span>
+                                        <span className="text-[8px] font-semibold text-gray-400 uppercase mt-0.5">Total MW</span>
+                                    </div>
+                                </div>
+                                {/* Legend */}
+                                <div className="flex justify-center gap-4 mt-2">
+                                    {modelSplitData.map(d => {
+                                        const total = modelSplitData.reduce((s, x) => s + x.value, 0);
+                                        const perc = total > 0 ? (d.value / total) * 100 : 0;
+                                        return (
+                                            <div key={d.name} className="flex flex-col items-center">
+                                                <div className="flex items-center gap-1 mb-0.5">
+                                                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                                                    <span className="text-[9px] font-semibold text-gray-500 uppercase">{d.name}</span>
+                                                </div>
+                                                <span className="text-xs font-bold text-gray-900 dark:text-white">{perc.toFixed(1)}%</span>
                                             </div>
                                         );
                                     })}
@@ -654,70 +911,95 @@ export default function CommissioningDashboard() {
                             </ChartContainer>
                         </div>
 
-                        {/* Right Column - Quarterly Performance */}
-                        <div className="lg:col-span-2">
+                        {/* Row 2: Quarterly Performance + Deviation Side by Side */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            {/* Quarterly Performance Bar Chart */}
                             <ChartContainer
-                                className="h-full"
                                 title={timelineView === 'monthly' ? "Monthly Timeline" : timelineView === 'quarterly' ? "Quarterly Performance" : timelineView === 'half-yearly' ? "Half-Yearly View" : "Annual Summary"}
                                 controls={
-                                    <div className="flex flex-wrap items-center gap-2">
+                                    <div className="flex flex-wrap items-center gap-1">
                                         <CardSelect label="" options={categoryOptions} value={timelineCategory} onChange={setTimelineCategory} />
                                         <CardSelect label="" options={businessModelOptions} value={timelineBusinessModel} onChange={setTimelineBusinessModel} />
-                                        <CardSelect label="" options={projectOptions} value={mainTimelineProject} onChange={setMainTimelineProject} />
-                                        <CardSelect label="" options={spvOptions} value={mainTimelineSPV} onChange={setMainTimelineSPV} />
-                                        <div className="hidden sm:block w-px h-6 bg-gray-300 dark:bg-gray-600" />
                                         <ViewPivot active={timelineView} onChange={setTimelineView} label="" />
                                     </div>
                                 }
                             >
-                                {/* Filter tags */}
-                                <div className="mb-3 flex flex-wrap gap-1 text-[9px]">
-                                    <span className="bg-gray-100 dark:bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded font-medium">FY {selectedFY}</span>
-                                    <span className="bg-gray-100 dark:bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded font-medium">{categoryFilter === 'all' ? 'Solar + Wind' : categoryFilter}</span>
-                                    <span className="bg-gray-100 dark:bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded font-medium">{timelineBusinessModel}</span>
-                                    <span className="bg-gray-100 dark:bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded font-medium">{timelineCategory}</span>
-                                </div>
-
-                                <ResponsiveContainer width="100%" height={350}>
-                                    <BarChart data={timelineView === 'monthly' ? monthlyData : timelineView === 'half-yearly' ? halfYearlyData : quarterlyData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                                <ResponsiveContainer width="100%" height={240}>
+                                    <BarChart data={timelineView === 'monthly' ? monthlyData : timelineView === 'half-yearly' ? halfYearlyData : quarterlyData} margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
                                         {GRADIENTS}
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11 }} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11 }} width={40} />
                                         <Tooltip
                                             cursor={{ fill: '#f1f5f9' }}
                                             content={({ active, payload, label }) => {
                                                 if (active && payload && payload.length) {
                                                     return (
-                                                        <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 min-w-[220px]">
-                                                            <p className="font-black text-lg mb-2">{label}</p>
+                                                        <div className="bg-white dark:bg-gray-800 p-3 rounded-xl shadow-xl border border-gray-100 dark:border-gray-700 min-w-[180px]">
+                                                            <p className="font-bold text-sm mb-1">{label}</p>
                                                             {payload.map((p: any) => (
-                                                                <div key={p.name} className="flex justify-between items-center py-1">
-                                                                    <span className="text-gray-500 text-sm font-bold flex items-center gap-1">
+                                                                <div key={p.name} className="flex justify-between items-center py-0.5 text-xs">
+                                                                    <span className="text-gray-500 flex items-center gap-1">
                                                                         <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }}></span>
                                                                         {p.name}:
                                                                     </span>
-                                                                    <span className="font-black text-gray-900 dark:text-white ml-4">{p.value.toLocaleString()} MW</span>
+                                                                    <span className="font-bold text-gray-900 dark:text-white">{p.value.toLocaleString()} MW</span>
                                                                 </div>
                                                             ))}
-                                                            <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 text-[9px] text-gray-400 font-bold uppercase">
-                                                                {timelineCategory} | {timelineBusinessModel} | FY {selectedFY}
-                                                            </div>
                                                         </div>
                                                     );
                                                 }
                                                 return null;
                                             }}
                                         />
-                                        <Legend iconType="rect" verticalAlign="top" align="right" />
-                                        <Bar dataKey="PPA Plan" name="PPA Plan" fill="url(#gradientPlan)" radius={[4, 4, 0, 0]} barSize={32} />
-                                        <Bar dataKey="Actual Commissioning" name="Actual Commissioning" fill="url(#gradientActual)" radius={[4, 4, 0, 0]} barSize={32} />
-                                        <Bar dataKey="Rephase Strategy" name="Rephase Strategy" fill="url(#gradientRephase)" radius={[4, 4, 0, 0]} barSize={32} />
+                                        <Legend iconType="rect" verticalAlign="top" align="right" wrapperStyle={{ fontSize: '10px' }} />
+                                        <Bar dataKey="PPA Plan" name="Plan" fill="url(#gradientPlan)" radius={[3, 3, 0, 0]} barSize={24} />
+                                        <Bar dataKey="Actual Commissioning" name="Actual" fill="url(#gradientActual)" radius={[3, 3, 0, 0]} barSize={24} />
+                                        <Bar dataKey="Rephase Strategy" name="Rephase" fill="url(#gradientRephase)" radius={[3, 3, 0, 0]} barSize={24} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </ChartContainer>
+
+                            {/* Deviation Chart */}
+                            <ChartContainer
+                                title="Deviation Analysis (Actual − Plan)"
+                                controls={
+                                    <ViewPivot active={deviationView} onChange={setDeviationView} label="" />
+                                }
+                            >
+                                <ResponsiveContainer width="100%" height={240}>
+                                    <BarChart data={deviationChartData} margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11 }} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11 }} width={40} />
+                                        <Tooltip
+                                            cursor={{ fill: '#fef2f2' }}
+                                            content={({ active, payload, label }) => {
+                                                if (active && payload && payload.length) {
+                                                    const val = payload[0].value as number;
+                                                    return (
+                                                        <div className="bg-white dark:bg-gray-800 p-3 rounded-xl shadow-xl border-2" style={{ borderColor: val >= 0 ? '#10B981' : '#F43F5E' }}>
+                                                            <p className="font-bold text-sm">{label}</p>
+                                                            <p className={`text-lg font-black ${val >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                                {val >= 0 ? '+' : ''}{val.toLocaleString()} MW
+                                                            </p>
+                                                            <p className="text-[9px] font-bold text-gray-400 uppercase">
+                                                                {val >= 0 ? 'Ahead' : 'Behind'}
+                                                            </p>
+                                                        </div>
+                                                    );
+                                                }
+                                                return null;
+                                            }} />
+                                        <Bar dataKey="Deviation" radius={[4, 4, 0, 0]} barSize={28}>
+                                            {deviationChartData.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={entry.Deviation >= 0 ? '#10B981' : '#F43F5E'} fillOpacity={0.85} />
+                                            ))}
+                                        </Bar>
                                     </BarChart>
                                 </ResponsiveContainer>
                             </ChartContainer>
                         </div>
-
                     </div>
                 )}
 
@@ -770,8 +1052,8 @@ export default function CommissioningDashboard() {
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                             <ChartContainer
-                                title="Solar - Quarterly Comparison"
-                                controls={<CardSelect label="PROJECT PHASE" options={['All Phases', 'Phase 1', 'Phase 2']} value={solarPhase} onChange={setSolarPhase} />}
+                                title={`Solar - Quarterly ${solarQMode}`}
+                                controls={<CardSelect label="VIEW MODE" options={['Absolute', 'Cumulative']} value={solarQMode} onChange={setSolarQMode} />}
                             >
                                 <ResponsiveContainer width="100%" height={250}>
                                     <BarChart data={solarData.quarterly}>
@@ -785,8 +1067,8 @@ export default function CommissioningDashboard() {
                                 </ResponsiveContainer>
                             </ChartContainer>
                             <ChartContainer
-                                title="Solar - Monthly Trend"
-                                controls={<CardSelect label="DATA VIEW" options={['Target View', 'Execution View']} value={solarViewMode} onChange={setSolarViewMode} />}
+                                title={`Solar - Monthly ${solarMMode}`}
+                                controls={<CardSelect label="VIEW MODE" options={['Monthly', 'Cumulative']} value={solarMMode} onChange={setSolarMMode} />}
                             >
                                 <ResponsiveContainer width="100%" height={250}>
                                     <AreaChart data={solarData.monthly}>
@@ -886,8 +1168,8 @@ export default function CommissioningDashboard() {
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                             <ChartContainer
-                                title="Wind - Quarterly Comparison"
-                                controls={<CardSelect label="SPV FILTER" options={['All SPVs', 'Selected SPVs']} value={windSPV} onChange={setWindSPV} />}
+                                title={`Wind - Quarterly ${windQMode}`}
+                                controls={<CardSelect label="VIEW MODE" options={['Absolute', 'Cumulative']} value={windQMode} onChange={setWindQMode} />}
                             >
                                 <ResponsiveContainer width="100%" height={250}>
                                     <BarChart data={windData.quarterly}>
@@ -901,8 +1183,8 @@ export default function CommissioningDashboard() {
                                 </ResponsiveContainer>
                             </ChartContainer>
                             <ChartContainer
-                                title="Wind - Monthly Trend"
-                                controls={<CardSelect label="MARKET TYPE" options={['Growth View', 'Standard View']} value={windMarket} onChange={setWindMarket} />}
+                                title={`Wind - Monthly ${windMMode}`}
+                                controls={<CardSelect label="VIEW MODE" options={['Monthly', 'Cumulative']} value={windMMode} onChange={setWindMMode} />}
                             >
                                 <ResponsiveContainer width="100%" height={250}>
                                     <AreaChart data={windData.monthly}>
@@ -915,7 +1197,6 @@ export default function CommissioningDashboard() {
                                     </AreaChart>
                                 </ResponsiveContainer>
                             </ChartContainer>
-
                         </div>
 
                         <div className="bg-white dark:bg-gray-950 border border-gray-100 dark:border-gray-800 rounded-[2.5rem] p-8 shadow-sm">
@@ -962,9 +1243,10 @@ export default function CommissioningDashboard() {
                                     <span className="w-1 h-5 bg-purple-500 rounded-sm" />
                                     Business Model Analysis
                                 </h3>
-                                <div className="flex flex-wrap gap-2">
+                                <div className="flex flex-wrap gap-2 relative z-[60]">
                                     <GlobalSlicer label="Technology" options={['All', 'Solar', 'Wind']} value={modelsTechnology} onChange={setModelsTechnology} />
                                     <CardSelect label="Category" options={categoryOptions} value={modelsCategory} onChange={setModelsCategory} />
+                                    <CardSelect label="Project" options={projectOptions} value={modelsProject} onChange={setModelsProject} />
                                 </div>
                             </div>
                             {/* Filter Tags */}
@@ -1001,17 +1283,38 @@ export default function CommissioningDashboard() {
                                     title="📊 Model vs Target Breakdown"
                                     controls={<CardSelect label="DRILL DOWN" options={['Project Drill-down', 'Phase Breakdown']} value={modelDrill} onChange={setModelDrill} />}
                                 >
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 h-[300px]">
-                                        {modelSplitData.map(m => (
-                                            <div key={m.name} className="bg-gray-50 dark:bg-gray-800/50 p-6 rounded-[2rem] flex flex-col justify-center items-center shadow-inner hover:shadow-md transition-all border border-transparent hover:border-gray-200 dark:hover:border-gray-700 group">
-                                                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{m.name}</span>
-                                                <span className="text-3xl font-black group-hover:scale-110 transition-transform" style={{ color: m.color }}>{m.value.toLocaleString()} MW</span>
-                                                <div className="mt-4 w-full h-1.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
-                                                    <motion.div initial={{ width: 0 }} animate={{ width: `${(m.value / overallKpi.plan) * 100}%` }} className="h-full" style={{ backgroundColor: m.color }} />
-                                                </div>
-                                                <span className="mt-2 text-[10px] font-bold text-gray-500 uppercase tracking-tighter">{((m.value / (overallKpi.plan || 1)) * 100).toFixed(1)}% of total</span>
+                                    <div className="h-[300px] overflow-y-auto custom-scrollbar">
+                                        {modelDrill === 'Project Drill-down' ? (
+                                            <div className="space-y-4 pr-2">
+                                                {allProjects.filter(p => p.planActual === 'Plan' && p.includedInTotal && (modelsProject === 'All Projects' || p.projectName === modelsProject) && (modelsTechnology === 'All' || p.category?.toLowerCase().includes(modelsTechnology.toLowerCase()))).slice(0, 10).map(p => (
+                                                    <div key={p.projectName} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800/40 rounded-xl border border-gray-100 dark:border-gray-700">
+                                                        <div className="flex flex-col">
+                                                            <span className="text-xs font-black text-gray-800 dark:text-gray-200 uppercase">{p.projectName}</span>
+                                                            <span className="text-[10px] font-bold text-gray-400 uppercase">{p.projectType} • {p.category}</span>
+                                                        </div>
+                                                        <div className="text-right flex flex-col items-end">
+                                                            <span className="text-sm font-black text-[#0B74B0]">{p.capacity} MW</span>
+                                                            <div className="w-20 h-1 bg-gray-200 dark:bg-gray-700 rounded-full mt-1 overflow-hidden">
+                                                                <div className="h-full bg-[#0B74B0]" style={{ width: '100%' }} />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
                                             </div>
-                                        ))}
+                                        ) : (
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 h-full">
+                                                {modelSplitData.map(m => (
+                                                    <div key={m.name} className="bg-gray-50 dark:bg-gray-800/50 p-6 rounded-[2rem] flex flex-col justify-center items-center shadow-inner hover:shadow-md transition-all border border-transparent hover:border-gray-200 dark:hover:border-gray-700 group">
+                                                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{m.name}</span>
+                                                        <span className="text-3xl font-black group-hover:scale-110 transition-transform" style={{ color: m.color }}>{m.value.toLocaleString()} MW</span>
+                                                        <div className="mt-4 w-full h-1.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
+                                                            <motion.div initial={{ width: 0 }} animate={{ width: `${(m.value / (overallKpi.plan || 1)) * 100}%` }} className="h-full" style={{ backgroundColor: m.color }} />
+                                                        </div>
+                                                        <span className="mt-2 text-[10px] font-bold text-gray-500 uppercase tracking-tighter">{((m.value / (overallKpi.plan || 1)) * 100).toFixed(1)}% of total</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                 </ChartContainer>
                             </div>
@@ -1020,182 +1323,83 @@ export default function CommissioningDashboard() {
                 )}
 
                 {activeDashboard === 'deviation' && (
-                    <div className="space-y-6">
-                        {/* Deviation Dashboard Header */}
-                        <div className="bg-white dark:bg-gray-900 rounded-lg p-6 border border-gray-200 dark:border-gray-700 shadow-sm">
-                            <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
+                    <div className="space-y-4 w-full">
+                        {/* Deviation Dashboard Header with Summary Stats */}
+                        <div className="bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-700 shadow-sm">
+                            <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
                                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                                     <span className="w-1 h-5 bg-rose-500 rounded-sm" />
                                     Deviation Analysis
                                 </h3>
-                                <div className="flex flex-wrap gap-2">
-                                    <GlobalSlicer label="Technology" options={['All', 'Solar', 'Wind']} value={categoryFilter === 'all' ? 'All' : categoryFilter === 'solar' ? 'Solar' : 'Wind'} onChange={(v: string) => setCategoryFilter(v.toLowerCase() as any)} />
-                                    <CardSelect label="Model" options={businessModelOptions} value={timelineBusinessModel} onChange={setTimelineBusinessModel} />
-                                    <CardSelect label="Category" options={categoryOptions} value={timelineCategory} onChange={setTimelineCategory} />
+                                <div className="flex flex-wrap gap-2 relative z-[60]">
+                                    <GlobalSlicer label="" options={['All', 'Solar', 'Wind']} value={categoryFilter === 'all' ? 'All' : categoryFilter === 'solar' ? 'Solar' : 'Wind'} onChange={(v: string) => setCategoryFilter(v.toLowerCase() as any)} />
+                                    <CardSelect label="" options={businessModelOptions} value={timelineBusinessModel} onChange={setTimelineBusinessModel} />
+                                    <CardSelect label="" options={categoryOptions} value={timelineCategory} onChange={setTimelineCategory} />
                                 </div>
                             </div>
 
                             {/* Deviation Summary Stats */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-center">
-                                    <p className="text-xs font-medium text-gray-500 uppercase">Total Deviation</p>
-                                    <p className={`text-xl font-bold ${(overallKpi.actual - overallKpi.plan) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                        {(overallKpi.actual - overallKpi.plan) >= 0 ? '+' : ''}{(overallKpi.actual - overallKpi.plan).toLocaleString()} <span className="text-sm">MW</span>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-center">
+                                    <p className="text-[10px] font-medium text-gray-500 uppercase">Total Deviation</p>
+                                    <p className={`text-lg font-bold ${(overallKpi.actual - overallKpi.plan) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                        {(overallKpi.actual - overallKpi.plan) >= 0 ? '+' : ''}{(overallKpi.actual - overallKpi.plan).toLocaleString()} <span className="text-xs">MW</span>
                                     </p>
                                 </div>
-                                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-center">
-                                    <p className="text-xs font-medium text-gray-500 uppercase">Periods Behind</p>
-                                    <p className="text-xl font-bold text-rose-600">{deviationChartData.filter(d => d.Deviation < 0).length}</p>
+                                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-center">
+                                    <p className="text-[10px] font-medium text-gray-500 uppercase">Periods Behind</p>
+                                    <p className="text-lg font-bold text-rose-600">{deviationChartData.filter(d => d.Deviation < 0).length}</p>
                                 </div>
-                                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-center">
-                                    <p className="text-xs font-medium text-gray-500 uppercase">Periods Ahead</p>
-                                    <p className="text-xl font-bold text-emerald-600">{deviationChartData.filter(d => d.Deviation >= 0).length}</p>
+                                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-center">
+                                    <p className="text-[10px] font-medium text-gray-500 uppercase">Periods Ahead</p>
+                                    <p className="text-lg font-bold text-emerald-600">{deviationChartData.filter(d => d.Deviation >= 0).length}</p>
                                 </div>
-                                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-center">
-                                    <p className="text-xs font-medium text-gray-500 uppercase">Projects Critical</p>
-                                    <p className="text-xl font-bold text-amber-600">{criticalProjects.filter(p => p.diff < 0).length}</p>
+                                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-center">
+                                    <p className="text-[10px] font-medium text-gray-500 uppercase">Achievement %</p>
+                                    <p className="text-lg font-bold text-blue-600">{overallKpi.achievement.toFixed(1)}%</p>
                                 </div>
                             </div>
-
-                            {/* Filter Tags */}
-                            <div className="flex flex-wrap gap-2 text-xs">
-                                <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">FY {selectedFY}</span>
-                                <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">
-                                    {categoryFilter === 'all' ? 'Solar + Wind' : categoryFilter}
-                                </span>
-                                <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">
-                                    {timelineBusinessModel === 'All Models' ? 'All Models' : timelineBusinessModel}
-                                </span>
-                                <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded font-medium">
-                                    {timelineCategory === 'All Categories' ? 'All Categories' : timelineCategory}
-                                </span>
-                            </div>
-
                         </div>
 
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            <ChartContainer
-                                title="Deviation by Period (Actual − Plan)"
-                                controls={
-                                    <ViewPivot active={deviationView} onChange={setDeviationView} />
-                                }
-                            >
-                                <ResponsiveContainer width="100%" height={300}>
-                                    <BarChart data={deviationChartData}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                                        <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                                        <YAxis axisLine={false} tickLine={false} />
-                                        <Tooltip
-                                            cursor={{ fill: '#fef2f2' }}
-                                            content={({ active, payload, label }) => {
-                                                if (active && payload && payload.length) {
-                                                    const val = payload[0].value as number;
-                                                    return (
-                                                        <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-2xl border-2" style={{ borderColor: val >= 0 ? '#10B981' : '#F43F5E' }}>
-                                                            <p className="font-black text-lg">{label}</p>
-                                                            <p className={`text-2xl font-black ${val >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                                                {val >= 0 ? '+' : ''}{val.toLocaleString()} MW
-                                                            </p>
-                                                            <p className="text-[10px] font-bold text-gray-400 uppercase mt-1">
-                                                                {val >= 0 ? 'Ahead of Schedule' : 'Action Required'}
-                                                            </p>
-                                                            <p className="text-[9px] text-gray-400 mt-2 border-t pt-2">
-                                                                {categoryFilter === 'all' ? 'All Technologies' : categoryFilter} | {timelineBusinessModel} | {timelineCategory}
-                                                            </p>
-                                                        </div>
-                                                    );
-                                                }
-                                                return null;
-                                            }} />
-                                        <Bar dataKey="Deviation" radius={[6, 6, 0, 0]} barSize={40}>
-                                            {deviationChartData.map((entry, index) => (
-                                                <Cell key={`cell-${index}`} fill={entry.Deviation >= 0 ? '#10B981' : '#F43F5E'} fillOpacity={0.8} />
-                                            ))}
-                                        </Bar>
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </ChartContainer>
-
-
-                            <ChartContainer
-                                title="📋 Critical Action Required (Top 5 Deviations)"
-                                controls={<div className="flex flex-col items-end gap-0.5"><span className="text-[8px] font-black text-rose-500 uppercase tracking-widest">CRITICALITY</span><span className="text-[10px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-100">PRIORITY 1</span></div>}
-                            >
-                                <div className="space-y-4 h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                                    {criticalProjects.map((p, i) => (
-                                        <div key={i} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 rounded-2xl border border-transparent hover:border-rose-200 dark:hover:border-rose-900 transition-all group">
-                                            <div className="flex items-center gap-3">
-                                                <div className={`p-2 rounded-xl ${p.diff < 0 ? 'bg-rose-100 dark:bg-rose-900/30 text-rose-600' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600'}`}>
-                                                    {p.category?.toLowerCase().includes('solar') ? '☀️' : '🌬️'}
-                                                </div>
-                                                <div>
-                                                    <p className="text-sm font-black text-gray-800 dark:text-white group-hover:text-rose-600 transition-colors uppercase">{p.name}</p>
-                                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">Plan: {p.plan} MW | Actual: {p.actual} MW</p>
-                                                </div>
-                                            </div>
-                                            <div className="text-right">
-                                                <p className={`text-sm font-black ${p.diff < 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
-                                                    {p.diff < 0 ? '' : '+'}{p.diff.toLocaleString()} MW
-                                                </p>
-                                                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${p.diff < 0 ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                                                    {p.status}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </ChartContainer>
-                        </div>
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                            <div className="lg:col-span-2">
-                                <ChartContainer
-                                    title="📈 Cumulative Flow Analysis"
-                                    controls={<div className="flex flex-col items-end gap-0.5"><span className="text-[8px] font-black text-blue-500 uppercase tracking-widest">VIEW</span><span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100 uppercase">TRENDS</span></div>}
-                                >
-                                    <ResponsiveContainer width="100%" height={300}>
-                                        <LineChart data={cumulativeData}>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                                            <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                                            <YAxis axisLine={false} tickLine={false} />
-                                            <Tooltip formatter={(v: any) => `${v.toLocaleString()} MW`} />
-                                            <Legend verticalAlign="top" align="right" />
-                                            <Line type="monotone" dataKey="Actual Commissioning" name="✅ Cumulative Actual" stroke="#10B981" strokeWidth={4} dot={{ r: 6, fill: "#10B981" }} />
-                                            <Line type="monotone" dataKey="PPA Plan" name="📋 Cumulative Plan" stroke="#3B82F6" strokeWidth={4} strokeDasharray="5 5" dot={{ r: 4 }} />
-                                        </LineChart>
-                                    </ResponsiveContainer>
-                                </ChartContainer>
-                            </div>
-
-                            <ChartContainer
-                                title="📊 Period Accuracy"
-                                controls={<div className="flex flex-col items-end gap-0.5"><span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">ACCURACY</span><span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100 uppercase">REAL-TIME</span></div>}
-                            >
-                                <div className="space-y-6 flex flex-col justify-center h-full pb-8">
-                                    {(timelineView === 'monthly' ? monthlyData : timelineView === 'half-yearly' ? halfYearlyData : quarterlyData).slice(0, 4).map((q: any) => {
-                                        const plan = q['PPA Plan'] || 0;
-                                        const actual = q['Actual Commissioning'] || 0;
-                                        const perc = plan > 0 ? (actual / plan) * 100 : 100;
-                                        return (
-                                            <div key={q.name} className="space-y-1">
-                                                <div className="flex justify-between text-[10px] font-black uppercase text-gray-400">
-                                                    <span>{q.name}</span>
-                                                    <span>{perc.toFixed(0)}%</span>
-                                                </div>
-                                                <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                                                    <motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(perc, 100)}%` }} className={`h-full ${perc >= 90 ? 'bg-emerald-500' : perc > 60 ? 'bg-amber-500' : 'bg-rose-500'}`} />
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                    {achieveView === 'yearly' && (
-                                        <div className="text-center py-8">
-                                            <p className="text-4xl font-black text-blue-600">{overallKpi.achievement.toFixed(1)}%</p>
-                                            <p className="text-xs font-bold text-gray-400 uppercase mt-2">Annual Target Met</p>
-                                        </div>
-                                    )}
-                                </div>
-                            </ChartContainer>
-                        </div>
+                        {/* Single Deviation Chart */}
+                        <ChartContainer
+                            title="Deviation by Period (Actual − Plan)"
+                            controls={
+                                <ViewPivot active={deviationView} onChange={setDeviationView} />
+                            }
+                        >
+                            <ResponsiveContainer width="100%" height={400}>
+                                <BarChart data={deviationChartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                                    <Tooltip
+                                        cursor={{ fill: '#fef2f2' }}
+                                        content={({ active, payload, label }) => {
+                                            if (active && payload && payload.length) {
+                                                const val = payload[0].value as number;
+                                                return (
+                                                    <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-2xl border-2" style={{ borderColor: val >= 0 ? '#10B981' : '#F43F5E' }}>
+                                                        <p className="font-black text-lg">{label}</p>
+                                                        <p className={`text-2xl font-black ${val >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                            {val >= 0 ? '+' : ''}{val.toLocaleString()} MW
+                                                        </p>
+                                                        <p className="text-[10px] font-bold text-gray-400 uppercase mt-1">
+                                                            {val >= 0 ? 'Ahead of Schedule' : 'Action Required'}
+                                                        </p>
+                                                    </div>
+                                                );
+                                            }
+                                            return null;
+                                        }} />
+                                    <Bar dataKey="Deviation" radius={[6, 6, 0, 0]} barSize={50}>
+                                        {deviationChartData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry.Deviation >= 0 ? '#10B981' : '#F43F5E'} fillOpacity={0.85} />
+                                        ))}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </ChartContainer>
                     </div>
                 )}
             </div>
@@ -1221,7 +1425,7 @@ function GlobalSlicer({ label, options, value, onChange }: { label: string; opti
             <button
                 ref={buttonRef}
                 onClick={handleOpen}
-                className="flex items-center gap-2 bg-[#F5F7FA] dark:bg-gray-800 hover:bg-white dark:hover:bg-gray-700 border border-[#D1D5DB] dark:border-gray-600 rounded-md px-3 py-1.5 text-xs font-medium text-[#1F2937] dark:text-gray-200 transition-colors"
+                className="flex items-center gap-2 bg-[#F5F7FA] dark:bg-gray-800 hover:bg-white dark:hover:bg-gray-700 border border-[#D1D5DB] dark:border-gray-600 rounded-md px-3 py-1.5 text-xs font-medium text-[#1F2937] dark:text-gray-200 transition-colors cursor-pointer"
             >
                 {value}
                 <span className={`text-[10px] text-[#6B7280] transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
@@ -1290,7 +1494,7 @@ function MultiSlicer({ label, options, selected, onChange }: { label: string; op
             <button
                 ref={buttonRef}
                 onClick={handleOpen}
-                className="h-8 flex items-center justify-between gap-2 bg-white dark:bg-gray-800 hover:bg-[#F9FAFB] dark:hover:bg-gray-700 border border-[#D1D5DB] dark:border-gray-600 rounded-md px-3 text-xs font-medium text-[#1F2937] dark:text-gray-200 transition-colors min-w-[100px]"
+                className="h-8 flex items-center justify-between gap-2 bg-white dark:bg-gray-800 hover:bg-[#F9FAFB] dark:hover:bg-gray-700 border border-[#D1D5DB] dark:border-gray-600 rounded-md px-3 text-xs font-medium text-[#1F2937] dark:text-gray-200 transition-colors min-w-[100px] cursor-pointer"
             >
                 <span className="truncate">{selected.includes('all') ? 'All' : `${selected.length} Selected`}</span>
                 <span className={`text-[10px] text-[#6B7280] transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
@@ -1362,7 +1566,7 @@ function CardSelect({ label, options, value, onChange, variant = 'light' }: { la
             <button
                 ref={buttonRef}
                 onClick={handleOpen}
-                className={buttonClass}
+                className={`${buttonClass} cursor-pointer`}
             >
                 <span className="truncate flex-1 text-left" title={value}>{value}</span>
                 <span className={arrowClass}>▼</span>
@@ -1414,7 +1618,7 @@ function KPICard({ label, value, unit, trend, gradient }: { label: string; value
                         <p className="text-[10px] font-bold text-white/90 uppercase tracking-widest leading-tight">{label}</p>
                         <div className="flex items-baseline gap-1.5 flex-wrap">
                             <h2 className="text-2xl sm:text-3xl font-bold text-white leading-none shadow-sm drop-shadow-sm">
-                                {typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 4 }) : value}
+                                {typeof value === 'number' ? value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : value}
                             </h2>
                             <span className="text-sm font-medium text-white/80">{unit}</span>
                         </div>
@@ -1439,7 +1643,7 @@ function ChartContainer({ title, children, controls, className = "" }: { title: 
                     <span className="leading-tight">{cleanTitle}</span>
                 </h3>
                 {controls && (
-                    <div className="flex flex-wrap items-center justify-end gap-2 flex-grow sm:flex-grow-0">
+                    <div className="flex flex-wrap items-center justify-end gap-2 flex-grow sm:flex-grow-0 relative z-[60]">
                         {controls}
                     </div>
                 )}
