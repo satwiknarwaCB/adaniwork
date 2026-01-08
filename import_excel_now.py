@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
 
 from excel_parser import parse_excel_workbook, import_projects_to_db
 
-excel_path = r'd:\PWORK\CEO-tracker\AGEL FY 25-26 Commissioning Status_31-Dec-25.xlsx'
+excel_path = r'AGEL FY 25-26 Commissioning Status_31-Dec-25.xlsx'
 
 print(f"Reading Excel file: {excel_path}")
 with open(excel_path, 'rb') as f:
