@@ -7,6 +7,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     PieChart, Pie, Cell, AreaChart, Area, LineChart, Line
 } from 'recharts';
+import { SummaryTable } from './CommissioningSummaryTable';
 
 // Interfaces
 interface CommissioningProject {
@@ -176,7 +177,7 @@ export default function CommissioningDashboard() {
     const allProjects = useMemo(() => {
         const seen = new Set();
         return rawProjects.filter(p => {
-            const key = `${p.projectName}-${p.spv}-${p.category}-${p.section}-${p.planActual}-${p.capacity}`;
+            const key = `${p.sno}-${p.projectName}-${p.spv}-${p.category}-${p.section}-${p.planActual}-${p.capacity}`;
             if (seen.has(key)) return false;
             seen.add(key);
             return true;
@@ -203,13 +204,18 @@ export default function CommissioningDashboard() {
 
         const plan = projs.filter(p => p.planActual === 'Plan').reduce((s, p) => s + (p.capacity || 0), 0);
         const actual = projs.filter(p => p.planActual === 'Actual').reduce((s, p) => s + (p.totalCapacity || 0), 0);
-        const projectsCount = new Set(projs.filter(p => p.planActual === 'Plan').map(p => p.projectName)).size;
+        // Count unique projects by sno + projectName + spv + section + category (same as table grouping)
+        const projectCount = new Set(projs.filter(p => p.planActual === 'Plan').map(p => `${p.sno}|${p.projectName}|${p.spv}|${p.section}|${p.category}`)).size;
 
-        return { plan, actual, projectsCount, achievement: plan > 0 ? (actual / plan) * 100 : 0 };
+        return { plan, actual, projectsCount: projectCount, achievement: plan > 0 ? (actual / plan) * 100 : 0 };
     }, [allProjects]);
 
+    const formatNumber = (val: any) => {
+        if (val === null || val === undefined) return '-';
+        return Number(val).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    };
+
     const overallKpi = useMemo(() => getKPIData('Overall'), [getKPIData]);
-    // All KPIs now use the same scope from global filter
     const kpi1 = useMemo(() => getKPIData(globalKpiScope), [getKPIData, globalKpiScope]);
     const kpi2 = useMemo(() => getKPIData(globalKpiScope), [getKPIData, globalKpiScope]);
     const kpi3 = useMemo(() => getKPIData(globalKpiScope), [getKPIData, globalKpiScope]);
@@ -657,8 +663,7 @@ export default function CommissioningDashboard() {
                         {[
                             { id: 'overview', label: 'Overview' },
                             { id: 'solar', label: 'Solar' },
-                            { id: 'wind', label: 'Wind' },
-                            { id: 'models', label: 'Models' }
+                            { id: 'wind', label: 'Wind' }
                         ].map(tab => (
                             <button
                                 key={tab.id}
@@ -712,23 +717,6 @@ export default function CommissioningDashboard() {
                 />
             </div>
 
-            {/* Transparency Section: Business Logic */}
-            <div className="bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-xl p-3 flex flex-wrap gap-4 items-center justify-between shadow-sm">
-                <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
-                        <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    </div>
-                    <div>
-                        <h4 className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest leading-none">Measurement Logic</h4>
-                        <p className="text-[11px] text-gray-600 dark:text-gray-300 mt-1 font-medium">All metrics derived strictly from the provided Excel. No rounding or manual adjustments applied.</p>
-                    </div>
-                </div>
-                <div className="flex flex-wrap gap-x-6 gap-y-2 text-[10px] font-bold text-[#0B74B0] dark:text-blue-400 uppercase tracking-wide">
-                    <span>% Achievement = (Actual ÷ Plan) × 100</span>
-                    <span>Technology Mix = (Value ÷ Total Capacity) × 100</span>
-                    <span>Execution Deviation = Actual - Plan Target</span>
-                </div>
-            </div>
 
             {/* Section Divider */}
             <div className="flex items-center gap-3">
@@ -862,7 +850,6 @@ export default function CommissioningDashboard() {
                                             <CardSelect label="" options={categoryOptions} value={bizModelCategory} onChange={setBizModelCategory} />
                                             <CardSelect label="" options={projectOptions} value={bizModelProject} onChange={setBizModelProject} />
                                         </div>
-                                        <ViewPivot active={bizModelView} onChange={setBizModelView} label="" />
                                     </div>
                                 }
                             >

@@ -1,0 +1,194 @@
+[
+  {
+    "id": 1,
+    "optionType": "categories",
+    "optionValue": "Solar",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 2,
+    "optionType": "categories",
+    "optionValue": "Wind",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 3,
+    "optionType": "types",
+    "optionValue": "Merchant",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 4,
+    "optionType": "types",
+    "optionValue": "PPA",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 5,
+    "optionType": "types",
+    "optionValue": "Group",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 6,
+    "optionType": "spv",
+    "optionValue": "ARE56L",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 7,
+    "optionType": "spv",
+    "optionValue": "ARE57L",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 8,
+    "optionType": "spv",
+    "optionValue": "AHEJ5L",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 9,
+    "optionType": "spv",
+    "optionValue": "ARE45L",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 10,
+    "optionType": "spv",
+    "optionValue": "ARE3L",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 11,
+    "optionType": "spv",
+    "optionValue": "ASEJ6PL",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 12,
+    "optionType": "spv",
+    "optionValue": "AGE25BL",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 13,
+    "optionType": "spv",
+    "optionValue": "AGE26BL",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 14,
+    "optionType": "spv",
+    "optionValue": "AGE24L",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 15,
+    "optionType": "spv",
+    "optionValue": "ACL",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 16,
+    "optionType": "spv",
+    "optionValue": "AGE25CL",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 17,
+    "optionType": "spv",
+    "optionValue": "AGE26AL",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 18,
+    "optionType": "spv",
+    "optionValue": "ASEB1PL",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 19,
+    "optionType": "spv",
+    "optionValue": "KCTL",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 20,
+    "optionType": "spv",
+    "optionValue": "MCIPL",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 21,
+    "optionType": "spv",
+    "optionValue": "ASEJo6PL",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 22,
+    "optionType": "spv",
+    "optionValue": "ARE41L",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 23,
+    "optionType": "spv",
+    "optionValue": "AWEK3L",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 24,
+    "optionType": "sections",
+    "optionValue": "Khavda Solar",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 25,
+    "optionType": "sections",
+    "optionValue": "Rajasthan Solar",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 26,
+    "optionType": "sections",
+    "optionValue": "Rajasthan Solar Additional 500MW",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 27,
+    "optionType": "sections",
+    "optionValue": "Khavda Solar Copper+Merchant 50MW",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 28,
+    "optionType": "sections",
+    "optionValue": "Khavda Solar Internal 650MW",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 29,
+    "optionType": "sections",
+    "optionValue": "Khavda Wind",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 30,
+    "optionType": "sections",
+    "optionValue": "Khavda Wind Internal 421MW",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 31,
+    "optionType": "sections",
+    "optionValue": "Mundra Wind 76MW",
+    "fiscalYear": "FY_25-26"
+  },
+  {
+    "id": 32,
+    "optionType": "sections",
+    "optionValue": "Mundra Wind Internal 224.4MW",
+    "fiscalYear": "FY_25-26"
+  }
+]

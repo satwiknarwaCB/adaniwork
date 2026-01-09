@@ -158,8 +158,10 @@ const ApplicationPage = () => {
         return <WindStatusPage />;
       case 'masterdata':
         return <MasterDataTable />;
-      default:
+      case 'commissioning':
         return <CommissioningStatusPage />;
+      default:
+        return <CommissioningDashboard />;
     }
   };
 

@@ -1,0 +1,108 @@
+generator client {
+  provider = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  email     String   @unique
+  password  String
+  role      String   @default("viewer")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("users")
+}
+
+model CommissioningProject {
+  id              Int      @id @default(autoincrement())
+  fiscalYear      String   @map("fiscal_year")
+  sno             Int?
+  projectName     String   @map("project_name")
+  spv             String
+  projectType     String   @map("project_type")
+  plotLocation    String   @map("plot_location")
+  capacity        Float?
+  planActual      String   @map("plan_actual")
+  apr             Float?
+  may             Float?
+  jun             Float?
+  jul             Float?
+  aug             Float?
+  sep             Float?
+  oct             Float?
+  nov             Float?
+  dec             Float?
+  jan             Float?
+  feb             Float?
+  mar             Float?
+  totalCapacity   Float?   @map("total_capacity")
+  cummTillOct     Float?   @map("cumm_till_oct")
+  q1              Float?
+  q2              Float?
+  q3              Float?
+  q4              Float?
+  category        String
+  section         String   @default("A")
+  includedInTotal Boolean  @default(true) @map("included_in_total")
+  isDeleted       Boolean  @default(false) @map("is_deleted")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([fiscalYear])
+  @@map("commissioning_projects")
+}
+
+model CommissioningSummary {
+  id          Int      @id @default(autoincrement())
+  fiscalYear  String   @map("fiscal_year")
+  category    String
+  summaryType String   @map("summary_type")
+  apr         Float?
+  may         Float?
+  jun         Float?
+  jul         Float?
+  aug         Float?
+  sep         Float?
+  oct         Float?
+  nov         Float?
+  dec         Float?
+  jan         Float?
+  feb         Float?
+  mar         Float?
+  total       Float?
+  cummTillOct Float?   @map("cumm_till_oct")
+  q1          Float?
+  q2          Float?
+  q3          Float?
+  q4          Float?
+  isDeleted   Boolean  @default(false) @map("is_deleted")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([fiscalYear])
+  @@map("commissioning_summaries")
+}
+
+model DropdownOption {
+  id         Int      @id @default(autoincrement())
+  optionType String   @map("option_type")
+  optionValue String  @map("option_value")
+  fiscalYear String   @map("fiscal_year")
+  
+  @@map("dropdown_options")
+}
+
+model LocationRelationship {
+  id           Int    @id @default(autoincrement())
+  location     String
+  locationCode String @map("location_code")
+  fiscalYear   String @map("fiscal_year")
+
+  @@map("location_relationships")
+}

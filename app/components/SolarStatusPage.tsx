@@ -7,6 +7,7 @@ import {
 } from 'recharts';
 import * as XLSX from 'xlsx';
 import { useAuth } from '@/lib/hooks/useAuth';
+import { SummaryTable } from './CommissioningSummaryTable';
 
 // Interfaces
 interface CommissioningProject {
@@ -111,6 +112,7 @@ function EditableCell({ value, isEditing, onEdit, onSave, onCancel, formatNumber
 }
 
 interface GroupedProject {
+  sno: number;
   projectName: string;
   spv: string;
   category: string;
@@ -162,53 +164,88 @@ const SOLAR_SECTIONS = [
 export default function SolarStatusPage() {
   const queryClient = useQueryClient();
   const { isAdmin } = useAuth();
-  const fiscalYear = 'FY_25-26';
+  const [fiscalYear] = useState('FY_25-26');
   const [selectedSection, setSelectedSection] = useState('all');
   const [viewMode, setViewMode] = useState<'quarterly' | 'monthly'>('quarterly');
   const [selectedYear, setSelectedYear] = useState('all');
   const [selectedQuarter, setSelectedQuarter] = useState('all');
+  const [projectTypeFilter, setProjectTypeFilter] = useState('all');
+  const [capacityPointFilter, setCapacityPointFilter] = useState('all');
   const [showExportModal, setShowExportModal] = useState(false);
-  const [exportMonths, setExportMonths] = useState<string[]>(ALL_MONTHS.map(m => m.key));
   const [editingCell, setEditingCell] = useState<{ projectId: number, field: string } | null>(null);
+  const [exportMonths, setExportMonths] = useState<string[]>(['apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec', 'jan', 'feb', 'mar']);
 
-  const { data: allProjects = [], isLoading } = useQuery<CommissioningProject[]>({
-    queryKey: ['commissioning-projects', fiscalYear],
+  // Upload modal states
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<any>(null);
+
+  // Fetch projects
+  const { data: rawProjects = [], isLoading: projectsLoading } = useQuery<CommissioningProject[]>({
+    queryKey: ['solar-projects', fiscalYear],
     queryFn: async () => {
-      const response = await fetch(`/api/commissioning-projects?fiscalYear=${fiscalYear}`);
+      const response = await fetch(`/api/commissioning-projects?fiscalYear=${fiscalYear}&category=solar`);
       if (!response.ok) throw new Error('Failed to fetch projects');
       return response.json();
     },
     staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
-  // Save changes mutation
-  const saveProjectsMutation = useMutation({
-    mutationFn: async (updatedProjects: CommissioningProject[]) => {
-      const response = await fetch('/api/commissioning-projects', {
-        method: 'POST',
+  const isLoading = projectsLoading;
+
+  // Deduplicate projects
+  const solarProjects = useMemo(() => {
+    const seen = new Set();
+    return rawProjects.filter((p: any) => {
+      const key = `${p.sno}-${p.projectName}-${p.spv}-${p.category}-${p.section}-${p.planActual}-${p.capacity}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [rawProjects]);
+
+  // Save single project cell mutation
+  const saveCellMutation = useMutation({
+    mutationFn: async ({ projectId, field, value }: { projectId: number; field: string; value: number | null }) => {
+      const response = await fetch(`/api/commissioning-projects/${projectId}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fiscalYear, projects: updatedProjects }),
+        body: JSON.stringify({ [field]: value }),
       });
-      if (!response.ok) throw new Error('Failed to save projects');
+      if (!response.ok) throw new Error('Failed to save changes');
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['commissioning-projects', fiscalYear] });
+      // Invalidate all related queries so data refreshes everywhere
+      queryClient.invalidateQueries({ queryKey: ['solar-projects', fiscalYear] });
+      queryClient.invalidateQueries({ queryKey: ['commissioning-projects'] });
+      queryClient.invalidateQueries({ queryKey: ['wind-projects'] });
     },
+    onError: (error) => {
+      alert('Failed to save: ' + error.message);
+    }
   });
 
-  // Handle inline cell save
+  // Handle inline cell save with confirmation
   const handleCellSave = (project: CommissioningProject, field: string, value: number | null) => {
     if (!isAdmin) {
       alert('You do not have permission to modify project data. Please login as an Admin.');
+      setEditingCell(null);
       return;
     }
-    const updatedProject = { ...project, [field]: value };
-    const updatedProjects = allProjects.map((p: CommissioningProject) =>
-      p.id === project.id ? updatedProject : p
+
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      `Are you sure you want to update ${field.toUpperCase()} for "${project.projectName}" to ${value ?? 0}?`
     );
 
-    saveProjectsMutation.mutate(updatedProjects);
+    if (!confirmed) {
+      setEditingCell(null);
+      return;
+    }
+
+    saveCellMutation.mutate({ projectId: project.id!, field, value });
     setEditingCell(null);
   };
 
@@ -247,52 +284,54 @@ export default function SolarStatusPage() {
     return months;
   }, [selectedYear, selectedQuarter]);
 
-  // Filter only Solar projects
-  const solarProjects = useMemo(() => {
-    return allProjects.filter(p =>
-      p.category?.toLowerCase().includes('solar')
-    );
-  }, [allProjects]);
+  // Filter projects based on all active filters
+  const filteredProjects = useMemo(() => {
+    return solarProjects.filter(p => {
+      // Section Filter
+      if (selectedSection !== 'all' && p.section !== selectedSection) return false;
 
+      // Project Type Filter (PPA, Merchant, Group)
+      if (projectTypeFilter !== 'all' && p.projectType !== projectTypeFilter) return false;
+
+      // Capacity Point Filter (Plan, Actual, Rephase)
+      if (capacityPointFilter !== 'all' && p.planActual !== capacityPointFilter) return false;
+
+      return true;
+    });
+  }, [solarProjects, selectedSection, projectTypeFilter, capacityPointFilter]);
 
   // Group projects by name with Plan, Rephase, Actual
   const groupedProjects = useMemo(() => {
-    let filtered = solarProjects;
+    const groups: Record<string, { plan?: CommissioningProject; rephase?: CommissioningProject; actual?: CommissioningProject }> = {};
 
-    if (selectedSection !== 'all') {
-      filtered = filtered.filter(p => p.section === selectedSection);
-    }
+    filteredProjects.forEach(p => {
+      // Include sno in key so projects with same name/SPV but different S.No are kept separate
+      const key = `${p.sno}|${p.projectName}|${p.spv}|${p.section}`;
+      if (!groups[key]) groups[key] = {};
 
-    const projectMap = new Map<string, GroupedProject>();
-
-    filtered.forEach(p => {
-      const key = `${p.projectName}|${p.spv}|${p.section}`;
-      if (!projectMap.has(key)) {
-        projectMap.set(key, {
-          projectName: p.projectName,
-          spv: p.spv,
-          category: p.category,
-          section: p.section,
-          capacity: p.capacity,
-          plan: null,
-          rephase: null,
-          actual: null,
-        });
-      }
-
-      const group = projectMap.get(key)!;
-      if (p.planActual === 'Plan') {
-        group.plan = p;
-        group.capacity = p.capacity;
-      } else if (p.planActual === 'Rephase') {
-        group.rephase = p;
-      } else if (p.planActual === 'Actual') {
-        group.actual = p;
-      }
+      if (p.planActual === 'Plan') groups[key].plan = p;
+      if (p.planActual === 'Rephase') groups[key].rephase = p;
+      if (p.planActual === 'Actual') groups[key].actual = p;
     });
 
-    return Array.from(projectMap.values()).sort((a, b) => a.projectName.localeCompare(b.projectName));
-  }, [solarProjects, selectedSection]);
+    // Convert the grouped object back to an array of GroupedProject objects
+    return Object.entries(groups).map(([key, group]) => {
+      const [snoStr, projectName, spv, section] = key.split('|');
+      const sno = parseInt(snoStr, 10);
+      const refProject = group.plan || group.rephase || group.actual;
+      return {
+        sno: sno,
+        projectName: projectName,
+        spv: spv,
+        category: refProject?.category || '',
+        section: section,
+        capacity: refProject?.capacity || 0,
+        plan: group.plan || null,
+        rephase: group.rephase || null,
+        actual: group.actual || null,
+      };
+    }).sort((a, b) => a.projectName.localeCompare(b.projectName));
+  }, [filteredProjects]);
 
   // Calculate row data for summary table
   const calcRowData = useCallback((projects: CommissioningProject[], months: typeof ALL_MONTHS) => {
@@ -309,7 +348,7 @@ export default function SolarStatusPage() {
 
   // Summary data for the table - Only include projects marked for totals
   const summaryData = useMemo(() => {
-    const included = solarProjects.filter(p => p.includedInTotal);
+    const included = filteredProjects.filter(p => p.includedInTotal);
     const planProjects = included.filter(p => p.planActual === 'Plan');
     const rephaseProjects = included.filter(p => p.planActual === 'Rephase');
     const actualProjects = included.filter(p => p.planActual === 'Actual');
@@ -335,9 +374,9 @@ export default function SolarStatusPage() {
         ppa: calcRowData(filterByType(actualProjects, 'ppa'), visibleMonths),
         merchant: calcRowData(filterByType(actualProjects, 'merchant'), visibleMonths),
         group: calcRowData(filterByType(actualProjects, 'group'), visibleMonths),
-      },
+      }
     };
-  }, [solarProjects, visibleMonths, calcRowData]);
+  }, [filteredProjects, visibleMonths, calcRowData]);
 
   // KPIs - Only include projects marked for total inclusion for high-level metrics
   const kpis = useMemo(() => {
@@ -349,7 +388,8 @@ export default function SolarStatusPage() {
     const totalPlan = planProjects.reduce((s, p) => s + (p.capacity || 0), 0);
     const totalActual = actualProjects.reduce((s, p) => s + (p.totalCapacity || 0), 0);
     const totalRephase = rephaseProjects.reduce((s, p) => s + (p.totalCapacity || 0), 0);
-    const projectCount = new Set(solarProjects.map(p => p.projectName)).size;
+    // Count unique projects by sno + projectName + spv + section + category (same as table grouping)
+    const projectCount = new Set(includedProjects.filter(p => p.planActual === 'Plan').map(p => `${p.sno}|${p.projectName}|${p.spv}|${p.section}|${p.category}`)).size;
     const achievement = totalPlan > 0 ? (totalActual / totalPlan) * 100 : 0;
 
     return { totalPlan, totalActual, totalRephase, projectCount, achievement };
@@ -444,13 +484,7 @@ export default function SolarStatusPage() {
     addRow('Rephase - Merchant', rephaseProjects.filter(p => p.projectType?.toLowerCase().includes('merchant')));
     addRow('Rephase - Group', rephaseProjects.filter(p => p.projectType?.toLowerCase().includes('group')));
     addRow('Actual/Fcst', actualProjects);
-    addRow('Actual/Fcst - PPA', actualProjects.filter(p => p.projectType?.toLowerCase().includes('ppa')));
-    addRow('Actual/Fcst - Merchant', actualProjects.filter(p => p.projectType?.toLowerCase().includes('merchant')));
-    addRow('Actual/Fcst - Group', actualProjects.filter(p => p.projectType?.toLowerCase().includes('group')));
-
-    // Create Excel workbook
-    const wsData = [headers, ...rows];
-    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
 
     // Set column widths
     ws['!cols'] = [{ wch: 18 }, ...selectedMonthsData.map(() => ({ wch: 10 })), { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }];
@@ -463,6 +497,59 @@ export default function SolarStatusPage() {
     setShowExportModal(false);
   };
 
+  const handleExcelUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('fiscalYear', fiscalYear);
+
+      const response = await fetch('/api/upload-excel', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setUploadResult({
+          failed: 1,
+          errors: [data.detail || 'Upload failed']
+        });
+      } else {
+        setUploadResult({
+          success: data.projects_imported || 0,
+          sheets_found: data.sheets_found
+        });
+        queryClient.invalidateQueries({ queryKey: ['solar-projects'] });
+      }
+    } catch (error: any) {
+      setUploadResult({ errors: [error.message] });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleResetData = async () => {
+    if (!isAdmin) return;
+    if (!confirm('Are you sure you want to RESET ALL commissioning data? This cannot be undone.')) return;
+
+    try {
+      const response = await fetch('/api/reset-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fiscalYear })
+      });
+
+      if (response.ok) {
+        alert('Data reset successfully');
+        queryClient.invalidateQueries({ queryKey: ['solar-projects'] });
+      }
+    } catch (error) {
+      alert('Reset failed');
+    }
+  };
+
   const toggleExportMonth = (key: string) => {
     setExportMonths(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
   };
@@ -472,9 +559,11 @@ export default function SolarStatusPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-16 h-16 border-4 border-orange-200 dark:border-orange-800 border-t-orange-500 rounded-full animate-spin"></div>
-        <span className="ml-4 text-orange-600 dark:text-orange-400 font-medium">Loading Solar Portfolio...</span>
+      <div className="flex justify-center items-center h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-orange-200 border-t-orange-500 rounded-full animate-spin"></div>
+          <p className="text-gray-500 font-bold uppercase tracking-widest animate-pulse">Loading Solar Dashboard...</p>
+        </div>
       </div>
     );
   }
@@ -527,8 +616,36 @@ export default function SolarStatusPage() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-white">Solar Portfolio Dashboard</h1>
-              <p className="text-white/80 text-sm"></p>
+              <p className="text-white/80 text-sm font-bold uppercase tracking-widest mt-1">AGEL FY 2025-26 | As on: 31-Oct-25</p>
             </div>
+          </div>
+
+          <div className="absolute top-6 right-6 flex gap-2">
+            <button
+              onClick={handleExport}
+              className="px-4 py-2 bg-white/20 backdrop-blur-md border border-white/30 text-white rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-white/30 transition-all flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+              Export
+            </button>
+            {isAdmin && (
+              <>
+                <button
+                  onClick={() => setShowUploadModal(true)}
+                  className="px-4 py-2 bg-white/20 backdrop-blur-md border border-white/30 text-white rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-white/30 transition-all flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                  Upload Excel
+                </button>
+                <button
+                  onClick={handleResetData}
+                  className="px-4 py-2 bg-rose-500/20 backdrop-blur-md border border-rose-500/30 text-rose-100 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-rose-500/40 transition-all flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  Reset
+                </button>
+              </>
+            )}
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6">
@@ -555,6 +672,8 @@ export default function SolarStatusPage() {
           </div>
         </div>
       </motion.div>
+
+      {/* No Summary Tables as requested by user - Focus is on Charts and Details */}
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -671,13 +790,41 @@ export default function SolarStatusPage() {
               AGEL OVERALL SOLAR FY 2025-26
             </h3>
             <div className="flex items-center gap-3 flex-wrap">
+              {/* Project Type Filter */}
+              <div className="flex flex-col gap-1 items-center">
+                <label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest text-center">Project Type</label>
+                <select
+                  value={projectTypeFilter}
+                  onChange={(e) => setProjectTypeFilter(e.target.value)}
+                  className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-orange-500/20"
+                >
+                  <option value="all">All Types</option>
+                  <option value="PPA">PPA</option>
+                  <option value="Merchant">Merchant</option>
+                  <option value="Group">Group</option>
+                </select>
+              </div>
+              {/* Capacity Point Filter */}
+              <div className="flex flex-col gap-1 items-center">
+                <label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest text-center">Capacity Point</label>
+                <select
+                  value={capacityPointFilter}
+                  onChange={(e) => setCapacityPointFilter(e.target.value)}
+                  className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-orange-500/20"
+                >
+                  <option value="all">All Points</option>
+                  <option value="Plan">Plan</option>
+                  <option value="Actual">Actual / Fcst</option>
+                  <option value="Rephase">Rephase</option>
+                </select>
+              </div>
               {/* Year Filter */}
-              <div className="flex items-center gap-2">
-                <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Year:</label>
+              <div className="flex flex-col gap-1 items-center">
+                <label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest text-center">Year</label>
                 <select
                   value={selectedYear}
                   onChange={(e) => setSelectedYear(e.target.value)}
-                  className="px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-orange-500/20"
+                  className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-orange-500/20"
                 >
                   {YEAR_OPTIONS.map(opt => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -685,12 +832,12 @@ export default function SolarStatusPage() {
                 </select>
               </div>
               {/* Quarter Filter */}
-              <div className="flex items-center gap-2">
-                <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Quarter:</label>
+              <div className="flex flex-col gap-1 items-center">
+                <label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest text-center">Quarter</label>
                 <select
                   value={selectedQuarter}
                   onChange={(e) => setSelectedQuarter(e.target.value)}
-                  className="px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-orange-500/20"
+                  className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-orange-500/20"
                 >
                   {availableQuarters.map(opt => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -700,7 +847,7 @@ export default function SolarStatusPage() {
               {/* Export Button */}
               <button
                 onClick={() => setShowExportModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition-colors"
+                className="mt-4 flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-lg text-sm font-bold transition-all shadow-md active:scale-95"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -820,8 +967,9 @@ export default function SolarStatusPage() {
               <tr>
                 <th className="px-3 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-12">S.No</th>
                 <th className="px-3 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[180px]">Project Name</th>
+                <th className="px-3 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[120px]">SPV</th>
                 <th className="px-3 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Capacity</th>
-                <th className="px-3 py-3 text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-24">Type</th>
+                <th className="px-3 py-3 text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-24">Plan/Actual</th>
                 {ALL_MONTHS.map(m => (
                   <th key={m.key} className="px-2 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-16">{m.label}</th>
                 ))}
@@ -835,6 +983,7 @@ export default function SolarStatusPage() {
                   <tr className="hover:bg-blue-50/30 dark:hover:bg-gray-700/30">
                     <td className="px-3 py-2 text-gray-600 dark:text-gray-400 font-bold" rowSpan={3}>{idx + 1}</td>
                     <td className="px-3 py-2 font-semibold text-gray-800 dark:text-white" rowSpan={3}>{group.projectName}</td>
+                    <td className="px-3 py-2 text-gray-600 dark:text-gray-400 text-sm" rowSpan={3}>{group.spv || '-'}</td>
                     <td className="px-3 py-2 text-right font-bold text-gray-800 dark:text-white" rowSpan={3}>{formatNumber(group.capacity)}</td>
                     <td className="px-3 py-2 text-center">
                       <span className="inline-flex px-2 py-0.5 text-xs font-bold rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Plan</span>
@@ -974,6 +1123,94 @@ export default function SolarStatusPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
                   Export
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Upload Excel Modal */}
+      <AnimatePresence>
+        {showUploadModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowUploadModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">Upload Excel File</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Select an AGEL Commissioning Status Excel file to upload</p>
+              </div>
+
+              <div className="p-6">
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  id="excel-upload"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      handleExcelUpload(file);
+                    }
+                  }}
+                />
+                <label
+                  htmlFor="excel-upload"
+                  className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-orange-300 dark:border-orange-700 rounded-xl cursor-pointer hover:border-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-all"
+                >
+                  {uploading ? (
+                    <div className="flex flex-col items-center">
+                      <div className="w-10 h-10 border-4 border-orange-200 border-t-orange-500 rounded-full animate-spin mb-3"></div>
+                      <p className="text-sm font-medium text-orange-600 dark:text-orange-400">Uploading...</p>
+                    </div>
+                  ) : (
+                    <>
+                      <svg className="w-12 h-12 text-orange-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Click to select Excel file</p>
+                      <p className="text-xs text-gray-500 mt-1">.xlsx or .xls</p>
+                    </>
+                  )}
+                </label>
+
+                {uploadResult && (
+                  <div className={`mt-4 p-4 rounded-lg ${uploadResult.errors?.length ? 'bg-red-50 dark:bg-red-900/20' : 'bg-green-50 dark:bg-green-900/20'}`}>
+                    {uploadResult.success !== undefined && (
+                      <p className="text-sm font-medium text-green-700 dark:text-green-400">
+                        ✓ Successfully imported {uploadResult.success} projects
+                      </p>
+                    )}
+                    {uploadResult.sheets_found && (
+                      <p className="text-xs text-gray-500 mt-1">Sheets: {uploadResult.sheets_found.join(', ')}</p>
+                    )}
+                    {uploadResult.errors?.map((err: string, i: number) => (
+                      <p key={i} className="text-sm text-red-600 dark:text-red-400">{err}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowUploadModal(false);
+                    setUploadResult(null);
+                  }}
+                  className="px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Close
                 </button>
               </div>
             </motion.div>

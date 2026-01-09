@@ -187,7 +187,7 @@ export default function CommissioningStatusPage() {
   const projects = useMemo(() => {
     const seen = new Set();
     return rawProjects.filter((p: CommissioningProject) => {
-      const key = `${p.projectName}-${p.spv}-${p.category}-${p.section}-${p.planActual}-${p.capacity}`;
+      const key = `${p.sno}-${p.projectName}-${p.spv}-${p.category}-${p.section}-${p.planActual}-${p.capacity}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

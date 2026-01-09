@@ -9,6 +9,7 @@ import {
 } from 'recharts';
 import * as XLSX from 'xlsx';
 import { useAuth } from '@/lib/hooks/useAuth';
+import { SummaryTable } from './CommissioningSummaryTable';
 
 // Interfaces
 interface CommissioningProject {
@@ -113,6 +114,7 @@ function EditableCell({ value, isEditing, onEdit, onSave, onCancel, formatNumber
 }
 
 interface GroupedProject {
+    sno: number;
     projectName: string;
     spv: string;
     category: string;
@@ -163,55 +165,88 @@ const WIND_SECTIONS = [
 export default function WindStatusPage() {
     const queryClient = useQueryClient();
     const { isAdmin } = useAuth();
-    const fiscalYear = 'FY_25-26';
+    const [fiscalYear] = useState('FY_25-26');
+    const [editingCell, setEditingCell] = useState<{ projectId: number, field: string } | null>(null);
     const [selectedSection, setSelectedSection] = useState('all');
     const [viewMode, setViewMode] = useState<'quarterly' | 'monthly'>('quarterly');
     const [selectedYear, setSelectedYear] = useState('all');
     const [selectedQuarter, setSelectedQuarter] = useState('all');
+    const [projectTypeFilter, setProjectTypeFilter] = useState('all');
+    const [capacityPointFilter, setCapacityPointFilter] = useState('all');
     const [showExportModal, setShowExportModal] = useState(false);
-    const [exportMonths, setExportMonths] = useState<string[]>(ALL_MONTHS.map(m => m.key));
-    const [editingCell, setEditingCell] = useState<{ projectId: number, field: string } | null>(null);
+    const [exportMonths, setExportMonths] = useState<string[]>(['apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec', 'jan', 'feb', 'mar']);
 
-    const { data: allProjects = [], isLoading } = useQuery<CommissioningProject[]>({
-        queryKey: ['commissioning-projects', fiscalYear],
+    // Upload modal states
+    const [showUploadModal, setShowUploadModal] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const [uploadResult, setUploadResult] = useState<any>(null);
+
+    // Fetch Wind projects
+    const { data: rawProjects = [], isLoading: projectsLoading } = useQuery<CommissioningProject[]>({
+        queryKey: ['wind-projects', fiscalYear],
         queryFn: async () => {
-            const response = await fetch(`/api/commissioning-projects?fiscalYear=${fiscalYear}`);
+            const response = await fetch(`/api/commissioning-projects?fiscalYear=${fiscalYear}&category=wind`);
             if (!response.ok) throw new Error('Failed to fetch projects');
             return response.json();
         },
         staleTime: 0,
+        refetchOnWindowFocus: true,
     });
 
-    // Save changes mutation
-    const saveProjectsMutation = useMutation({
-        mutationFn: async (updatedProjects: CommissioningProject[]) => {
-            const response = await fetch('/api/commissioning-projects', {
-                method: 'POST',
+    const isLoading = projectsLoading;
+
+    // Deduplicate projects
+    const windProjects = useMemo(() => {
+        const seen = new Set();
+        return rawProjects.filter((p: any) => {
+            const key = `${p.sno}-${p.projectName}-${p.spv}-${p.category}-${p.section}-${p.planActual}-${p.capacity}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }, [rawProjects]);
+
+    // Save single project cell mutation
+    const saveCellMutation = useMutation({
+        mutationFn: async ({ projectId, field, value }: { projectId: number; field: string; value: number | null }) => {
+            const response = await fetch(`/api/commissioning-projects/${projectId}`, {
+                method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fiscalYear, projects: updatedProjects }),
+                body: JSON.stringify({ [field]: value }),
             });
-            if (!response.ok) throw new Error('Failed to save projects');
+            if (!response.ok) throw new Error('Failed to save changes');
             return response.json();
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['commissioning-projects', fiscalYear] });
+            // Invalidate all related queries so data refreshes everywhere
+            queryClient.invalidateQueries({ queryKey: ['wind-projects', fiscalYear] });
+            queryClient.invalidateQueries({ queryKey: ['commissioning-projects'] });
+            queryClient.invalidateQueries({ queryKey: ['solar-projects'] });
         },
+        onError: (error) => {
+            alert('Failed to save: ' + error.message);
+        }
     });
 
-    // Handle inline cell save
+    // Handle inline cell save with confirmation
     const handleCellSave = (project: CommissioningProject, field: string, value: number | null) => {
         if (!isAdmin) {
             alert('You do not have permission to modify project data. Please login as an Admin.');
-            setEditingCell(null); // Exit editing mode if not admin
+            setEditingCell(null);
             return;
         }
-        const updatedProject = { ...project, [field]: value };
-        const updatedProjects = allProjects.map((p: CommissioningProject) =>
-            p.id === project.id ? updatedProject : p
+
+        // Show confirmation dialog
+        const confirmed = window.confirm(
+            `Are you sure you want to update ${field.toUpperCase()} for "${project.projectName}" to ${value ?? 0}?`
         );
 
-        saveProjectsMutation.mutate(updatedProjects);
-        setEditingCell(null);
+        if (!confirmed) {
+            setEditingCell(null);
+            return;
+        }
+
+        saveCellMutation.mutate({ projectId: project.id!, field, value });
     };
 
     // Get available quarters based on year selection
@@ -249,51 +284,56 @@ export default function WindStatusPage() {
         return months;
     }, [selectedYear, selectedQuarter]);
 
-    // Filter only Wind projects
-    const windProjects = useMemo(() => {
-        return allProjects.filter(p =>
-            p.category?.toLowerCase().includes('wind')
-        );
-    }, [allProjects]);
+    // Filter projects based on all active filters
+    const filteredProjects = useMemo(() => {
+        return windProjects.filter(p => {
+            // Section Filter
+            if (selectedSection !== 'all' && p.section !== selectedSection) return false;
+
+            // Project Type Filter (PPA, Merchant, Group)
+            if (projectTypeFilter !== 'all' && p.projectType !== projectTypeFilter) return false;
+
+            // Capacity Point Filter (Plan, Actual, Rephase)
+            if (capacityPointFilter !== 'all' && p.planActual !== capacityPointFilter) return false;
+
+            return true;
+        });
+    }, [windProjects, selectedSection, projectTypeFilter, capacityPointFilter]);
 
     // Group projects by name with Plan, Rephase, Actual
     const groupedProjects = useMemo(() => {
-        let filtered = windProjects;
+        const groups: Record<string, { plan?: CommissioningProject; rephase?: CommissioningProject; actual?: CommissioningProject }> = {};
 
-        if (selectedSection !== 'all') {
-            filtered = filtered.filter(p => p.section === selectedSection);
-        }
+        filteredProjects.forEach(p => {
+            // Include sno in key so projects with same name/SPV but different S.No are kept separate
+            const key = `${p.sno}|${p.projectName}|${p.spv}|${p.section}`;
+            if (!groups[key]) groups[key] = {};
 
-        const projectMap = new Map<string, GroupedProject>();
-
-        filtered.forEach(p => {
-            const key = `${p.projectName}|${p.spv}|${p.section}`;
-            if (!projectMap.has(key)) {
-                projectMap.set(key, {
-                    projectName: p.projectName,
-                    spv: p.spv,
-                    category: p.category,
-                    section: p.section,
-                    capacity: p.capacity,
-                    plan: null,
-                    rephase: null,
-                    actual: null,
-                });
-            }
-
-            const group = projectMap.get(key)!;
-            if (p.planActual === 'Plan') {
-                group.plan = p;
-                group.capacity = p.capacity;
-            } else if (p.planActual === 'Rephase') {
-                group.rephase = p;
-            } else if (p.planActual === 'Actual') {
-                group.actual = p;
-            }
+            if (p.planActual === 'Plan') groups[key].plan = p;
+            if (p.planActual === 'Rephase') groups[key].rephase = p;
+            if (p.planActual === 'Actual') groups[key].actual = p;
         });
 
-        return Array.from(projectMap.values()).sort((a, b) => a.projectName.localeCompare(b.projectName));
-    }, [windProjects, selectedSection]);
+        // Convert the grouped object back to an array of GroupedProject objects
+        return Object.entries(groups).map(([key, group]) => {
+            const [snoStr, projectName, spv, section] = key.split('|');
+            const sno = parseInt(snoStr, 10);
+            const refProject = group.plan || group.rephase || group.actual;
+            return {
+                sno: sno,
+                projectName: projectName,
+                spv: spv,
+                plotLocation: refProject?.plotLocation || '',
+                category: refProject?.category || '',
+
+                section: section,
+                capacity: refProject?.capacity || 0,
+                plan: group.plan || null,
+                rephase: group.rephase || null,
+                actual: group.actual || null,
+            };
+        }).sort((a, b) => a.projectName.localeCompare(b.projectName));
+    }, [filteredProjects]);
 
     // Calculate row data for summary table
     const calcRowData = useCallback((projects: CommissioningProject[], months: typeof ALL_MONTHS) => {
@@ -310,7 +350,7 @@ export default function WindStatusPage() {
 
     // Summary data for the table - Only include projects marked for totals
     const summaryData = useMemo(() => {
-        const included = windProjects.filter(p => p.includedInTotal);
+        const included = filteredProjects.filter(p => p.includedInTotal);
         const planProjects = included.filter(p => p.planActual === 'Plan');
         const rephaseProjects = included.filter(p => p.planActual === 'Rephase');
         const actualProjects = included.filter(p => p.planActual === 'Actual');
@@ -336,9 +376,9 @@ export default function WindStatusPage() {
                 ppa: calcRowData(filterByType(actualProjects, 'ppa'), visibleMonths),
                 merchant: calcRowData(filterByType(actualProjects, 'merchant'), visibleMonths),
                 group: calcRowData(filterByType(actualProjects, 'group'), visibleMonths),
-            },
+            }
         };
-    }, [windProjects, visibleMonths, calcRowData]);
+    }, [filteredProjects, visibleMonths, calcRowData]);
 
     // KPIs - Only include projects marked for total inclusion for high-level metrics
     const kpis = useMemo(() => {
@@ -350,7 +390,8 @@ export default function WindStatusPage() {
         const totalPlan = planProjects.reduce((s, p) => s + (p.capacity || 0), 0);
         const totalActual = actualProjects.reduce((s, p) => s + (p.totalCapacity || 0), 0);
         const totalRephase = rephaseProjects.reduce((s, p) => s + (p.totalCapacity || 0), 0);
-        const projectCount = new Set(windProjects.map(p => p.projectName)).size;
+        // Count unique projects by sno + projectName + spv + section + category (same as table grouping)
+        const projectCount = new Set(includedProjects.filter(p => p.planActual === 'Plan').map(p => `${p.sno}|${p.projectName}|${p.spv}|${p.section}|${p.category}`)).size;
         const achievement = totalPlan > 0 ? (totalActual / totalPlan) * 100 : 0;
 
         return { totalPlan, totalActual, totalRephase, projectCount, achievement };
@@ -437,30 +478,64 @@ export default function WindStatusPage() {
 
         addRow('Plan', planProjects);
         addRow('Plan - PPA', planProjects.filter(p => p.projectType?.toLowerCase().includes('ppa')));
-        addRow('Plan - Merchant', planProjects.filter(p => p.projectType?.toLowerCase().includes('merchant')));
-        addRow('Plan - Group', planProjects.filter(p => p.projectType?.toLowerCase().includes('group')));
-        addRow('Rephase', rephaseProjects);
-        addRow('Rephase - PPA', rephaseProjects.filter(p => p.projectType?.toLowerCase().includes('ppa')));
-        addRow('Rephase - Merchant', rephaseProjects.filter(p => p.projectType?.toLowerCase().includes('merchant')));
-        addRow('Rephase - Group', rephaseProjects.filter(p => p.projectType?.toLowerCase().includes('group')));
-        addRow('Actual/Fcst', actualProjects);
-        addRow('Actual/Fcst - PPA', actualProjects.filter(p => p.projectType?.toLowerCase().includes('ppa')));
-        addRow('Actual/Fcst - Merchant', actualProjects.filter(p => p.projectType?.toLowerCase().includes('merchant')));
-        addRow('Actual/Fcst - Group', actualProjects.filter(p => p.projectType?.toLowerCase().includes('group')));
-
-        // Create Excel workbook
-        const wsData = [headers, ...rows];
-        const ws = XLSX.utils.aoa_to_sheet(wsData);
-
-        // Set column widths
-        ws['!cols'] = [{ wch: 18 }, ...selectedMonthsData.map(() => ({ wch: 10 })), { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }];
-
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Wind Summary');
-
-        // Download
-        XLSX.writeFile(wb, `AGEL_Wind_Summary_${new Date().toISOString().split('T')[0]}.xlsx`);
+        XLSX.writeFile(wb, `Wind_Commissioning_Status_${fiscalYear}.xlsx`);
         setShowExportModal(false);
+    };
+
+    const handleExcelUpload = async (file: File) => {
+        setUploading(true);
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('fiscalYear', fiscalYear);
+
+            const response = await fetch('/api/upload-excel', {
+                method: 'POST',
+                body: formData,
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                setUploadResult({
+                    failed: 1,
+                    errors: [data.detail || 'Upload failed']
+                });
+            } else {
+                setUploadResult({
+                    success: data.projects_imported || 0,
+                    sheets_found: data.sheets_found
+                });
+                queryClient.invalidateQueries({ queryKey: ['wind-projects'] });
+            }
+        } catch (error: any) {
+            setUploadResult({ errors: [error.message] });
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const handleResetData = async () => {
+        if (!isAdmin) return;
+        if (!confirm('Are you sure you want to RESET ALL commissioning data? This cannot be undone.')) return;
+
+        try {
+            const response = await fetch('/api/reset-data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fiscalYear })
+            });
+
+            if (response.ok) {
+                alert('Data reset successfully');
+                queryClient.invalidateQueries({ queryKey: ['wind-projects'] });
+            }
+        } catch (error) {
+            alert('Reset failed');
+        }
     };
 
     const toggleExportMonth = (key: string) => {
@@ -470,7 +545,7 @@ export default function WindStatusPage() {
     const selectAllMonths = () => setExportMonths(ALL_MONTHS.map(m => m.key));
     const clearAllMonths = () => setExportMonths([]);
 
-    if (isLoading) {
+    if (projectsLoading) {
         return (
             <div className="flex items-center justify-center h-64">
                 <div className="w-16 h-16 border-4 border-cyan-200 dark:border-cyan-800 border-t-cyan-500 rounded-full animate-spin"></div>
@@ -519,37 +594,66 @@ export default function WindStatusPage() {
                 </div>
 
                 <div className="relative z-10">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="p-3 bg-white/20 backdrop-blur-sm rounded-xl">
-                            <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                            </svg>
+                    <div className="flex items-center justify-between gap-3 mb-6">
+                        <div className="flex items-center gap-3">
+                            <div className="p-3 bg-white/20 backdrop-blur-sm rounded-xl text-white">
+                                <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h1 className="text-3xl font-black text-white uppercase tracking-tight">Wind Portfolio Dashboard</h1>
+                                <p className="text-cyan-50 text-sm font-medium mt-1 opacity-90 tracking-wide">Real-time wind commissioning tracking and portfolio performance</p>
+                            </div>
                         </div>
-                        <div>
-                            <h1 className="text-2xl font-bold text-white">Wind Portfolio Dashboard</h1>
-                            <p className="text-white/80 text-sm"></p>
+                        <div className="flex items-center gap-3">
+                            {isAdmin && (
+                                <button
+                                    onClick={() => setShowUploadModal(true)}
+                                    className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl text-xs font-black uppercase tracking-[0.1em] transition-all flex items-center gap-2 backdrop-blur-sm"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                    </svg>
+                                    Upload
+                                </button>
+                            )}
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6">
-                        <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4">
-                            <p className="text-white/70 text-xs font-semibold uppercase tracking-wider">Plan</p>
-                            <p className="text-2xl font-black text-white mt-1">{formatNumber(kpis.totalPlan)} <span className="text-sm font-medium">MW</span></p>
+                    {/* KPI Cards */}
+                    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mt-6">
+
+                        <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-4 border border-white/10">
+                            <p className="text-white/60 text-[10px] font-black uppercase tracking-widest pl-0.5">Plan</p>
+                            <p className="text-2xl font-black text-white mt-1 flex items-baseline">
+                                {formatNumber(kpis.totalPlan)}
+                                <span className="text-[10px] ml-1 font-bold opacity-70">MW</span>
+                            </p>
                         </div>
-                        <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4">
-                            <p className="text-white/70 text-xs font-semibold uppercase tracking-wider">Rephase</p>
-                            <p className="text-2xl font-black text-white mt-1">{formatNumber(kpis.totalRephase)} <span className="text-sm font-medium">MW</span></p>
+                        <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-4 border border-white/10">
+                            <p className="text-white/60 text-[10px] font-black uppercase tracking-widest pl-0.5">Rephase</p>
+                            <p className="text-2xl font-black text-white mt-1 flex items-baseline">
+                                {formatNumber(kpis.totalRephase)}
+                                <span className="text-[10px] ml-1 font-bold opacity-70">MW</span>
+                            </p>
                         </div>
-                        <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4">
-                            <p className="text-white/70 text-xs font-semibold uppercase tracking-wider">Actual/Fcst</p>
-                            <p className="text-2xl font-black text-white mt-1">{formatNumber(kpis.totalActual)} <span className="text-sm font-medium">MW</span></p>
+                        <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-4 border border-white/10">
+                            <p className="text-white/60 text-[10px] font-black uppercase tracking-widest pl-0.5">Actual/Fcst</p>
+                            <p className="text-2xl font-black text-white mt-1 flex items-baseline">
+                                {formatNumber(kpis.totalActual)}
+                                <span className="text-[10px] ml-1 font-bold opacity-70">MW</span>
+                            </p>
                         </div>
-                        <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4">
-                            <p className="text-white/70 text-xs font-semibold uppercase tracking-wider">Achievement</p>
-                            <p className="text-2xl font-black text-white mt-1">{kpis.achievement.toFixed(2)}<span className="text-sm font-medium">%</span></p>
+                        <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-4 border border-white/10">
+                            <p className="text-white/60 text-[10px] font-black uppercase tracking-widest pl-0.5">Achievement</p>
+                            <p className="text-2xl font-black text-white mt-1 flex items-baseline">
+                                {kpis.achievement.toFixed(2)}
+                                <span className="text-[10px] ml-1 font-bold opacity-70">%</span>
+                            </p>
                         </div>
-                        <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4">
-                            <p className="text-white/70 text-xs font-semibold uppercase tracking-wider">Projects</p>
+                        <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-4 border border-white/10">
+                            <p className="text-white/60 text-[10px] font-black uppercase tracking-widest pl-0.5">Total Projects</p>
                             <p className="text-2xl font-black text-white mt-1">{kpis.projectCount}</p>
                         </div>
                     </div>
@@ -558,103 +662,118 @@ export default function WindStatusPage() {
 
             {/* Charts Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Pie Chart */}
+                {/* Pie Chart: Section Split */}
                 <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
+                    initial={{ opacity: 0, scale: 0.98 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: 0.1 }}
-                    className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-cyan-100 dark:border-gray-700 p-6"
+                    className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 p-6"
                 >
-                    <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-4 flex items-center gap-2">
-                        <span className="w-1 h-4 bg-cyan-500 rounded-full"></span>
+                    <h3 className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-500"></span>
                         Capacity by Section
                     </h3>
-                    <div className="h-[200px] relative">
+                    <div className="h-[220px] relative">
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
-                                <Pie data={sectionData} innerRadius={50} outerRadius={80} dataKey="value" stroke="none">
+                                <Pie
+                                    data={sectionData}
+                                    innerRadius={60}
+                                    outerRadius={90}
+                                    dataKey="value"
+                                    stroke="none"
+                                    paddingAngle={2}
+                                >
                                     {sectionData.map((entry, index) => (
                                         <Cell key={index} fill={entry.color} />
                                     ))}
                                 </Pie>
-                                <Tooltip formatter={(value: any) => `${formatNumber(value)} MW`} />
+                                <Tooltip
+                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                                    formatter={(value: any) => [`${formatNumber(value)} MW`, 'Capacity']}
+                                />
                             </PieChart>
                         </ResponsiveContainer>
                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                             <div className="text-center">
-                                <p className="text-2xl font-black text-gray-800 dark:text-white">{formatNumber(kpis.totalPlan)}</p>
-                                <p className="text-[10px] font-bold text-gray-400 uppercase">Total MW</p>
+                                <p className="text-3xl font-black text-gray-800 dark:text-white leading-tight">{formatNumber(kpis.totalPlan)}</p>
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Total MW</p>
                             </div>
                         </div>
                     </div>
-                    <div className="flex flex-wrap justify-center gap-3 mt-4">
+                    <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 mt-6">
                         {sectionData.map(d => (
                             <div key={d.name} className="flex items-center gap-1.5">
-                                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: d.color }}></div>
-                                <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{d.name}</span>
+                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }}></div>
+                                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tight">{d.name}</span>
                             </div>
                         ))}
                     </div>
                 </motion.div>
 
-                {/* Bar Chart */}
+                {/* Performance Trend Chart */}
                 <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
+                    initial={{ opacity: 0, scale: 0.98 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: 0.2 }}
-                    className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-cyan-100 dark:border-gray-700 p-6"
+                    className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 p-6"
                 >
-                    <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-                        <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider flex items-center gap-2">
-                            <span className="w-1 h-4 bg-cyan-500 rounded-full"></span>
-                            {viewMode === 'quarterly' ? 'Quarterly' : 'Monthly'} Performance
+                    <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+                        <h3 className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-500"></span>
+                            Performance Trend
                         </h3>
-                        <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
-                            <button
-                                onClick={() => setViewMode('quarterly')}
-                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewMode === 'quarterly' ? 'bg-cyan-500 text-white shadow' : 'text-gray-600 dark:text-gray-400'}`}
-                            >
-                                Quarterly
-                            </button>
-                            <button
-                                onClick={() => setViewMode('monthly')}
-                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewMode === 'monthly' ? 'bg-cyan-500 text-white shadow' : 'text-gray-600 dark:text-gray-400'}`}
-                            >
-                                Monthly
-                            </button>
-                        </div>
                     </div>
-                    <ResponsiveContainer width="100%" height={250}>
-                        <AreaChart data={viewMode === 'quarterly' ? quarterlyData : monthlyData}>
-                            <defs>
-                                <linearGradient id="colorPlanWind" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3} />
-                                    <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
-                                </linearGradient>
-                                <linearGradient id="colorRephaseWind" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#F97316" stopOpacity={0.3} />
-                                    <stop offset="95%" stopColor="#F97316" stopOpacity={0} />
-                                </linearGradient>
-                                <linearGradient id="colorActualWind" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.3} />
-                                    <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
-                                </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11 }} />
-                            <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11 }} />
-                            <Tooltip
-                                formatter={(value: any) => `${formatNumber(value)} MW`}
-                                contentStyle={{ backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: '8px', border: '1px solid #e5e7eb' }}
-                            />
-                            <Legend />
-                            <Area type="monotone" dataKey="Plan" stroke="#3B82F6" strokeWidth={2} fill="url(#colorPlanWind)" dot={{ r: 4, fill: '#3B82F6' }} />
-                            <Area type="monotone" dataKey="Rephase" stroke="#F97316" strokeWidth={2} fill="url(#colorRephaseWind)" dot={{ r: 4, fill: '#F97316' }} />
-                            <Area type="monotone" dataKey="Actual/Fcst" stroke="#10B981" strokeWidth={2} fill="url(#colorActualWind)" dot={{ r: 4, fill: '#10B981' }} />
-                        </AreaChart>
-                    </ResponsiveContainer>
+
+                    <div className="h-[280px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={viewMode === 'quarterly' ? quarterlyData : monthlyData}>
+                                <defs>
+                                    <linearGradient id="colorPlanWind" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.2} />
+                                        <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
+                                    </linearGradient>
+                                    <linearGradient id="colorRephaseWind" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#F97316" stopOpacity={0.2} />
+                                        <stop offset="95%" stopColor="#F97316" stopOpacity={0} />
+                                    </linearGradient>
+                                    <linearGradient id="colorActualWind" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#10B981" stopOpacity={0.2} />
+                                        <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.1} />
+                                <XAxis
+                                    dataKey="name"
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
+                                />
+                                <YAxis
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
+                                />
+                                <Tooltip
+                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                                    formatter={(value: any) => [`${formatNumber(value)} MW`, '']}
+                                />
+                                <Legend
+                                    verticalAlign="top"
+                                    align="right"
+                                    iconType="circle"
+                                    wrapperStyle={{ top: -10, fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em' }}
+                                />
+                                <Area type="monotone" dataKey="Plan" stroke="#3B82F6" strokeWidth={3} fill="url(#colorPlanWind)" />
+                                <Area type="monotone" dataKey="Rephase" stroke="#F97316" strokeWidth={3} fill="url(#colorRephaseWind)" />
+                                <Area type="monotone" dataKey="Actual/Fcst" stroke="#10B981" strokeWidth={3} fill="url(#colorActualWind)" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
                 </motion.div>
             </div>
+
+            {/* No Summary Tables as requested by user - Detailed View Only */}
 
             {/* AGEL Overall Wind Summary Table */}
             <motion.div
@@ -667,17 +786,45 @@ export default function WindStatusPage() {
                 <div className="p-4 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 border-b border-gray-200 dark:border-gray-700">
                     <div className="flex flex-wrap items-center justify-between gap-4">
                         <h3 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                            <span className="text-cyan-500">2.</span>
-                            AGEL OVERALL WIND FY 2025-26
+                            <span className="text-cyan-500">1.</span>
+                            AGEL OVERALL WIND FY {fiscalYear.replace('FY_', '').replace('-', '-20')}
                         </h3>
                         <div className="flex items-center gap-3 flex-wrap">
+                            {/* Project Type Filter */}
+                            <div className="flex flex-col gap-1 items-center">
+                                <label className="text-[10px] font-black text-cyan-600 uppercase tracking-widest text-center">Project Type</label>
+                                <select
+                                    value={projectTypeFilter}
+                                    onChange={(e) => setProjectTypeFilter(e.target.value)}
+                                    className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-cyan-500/20"
+                                >
+                                    <option value="all">All Types</option>
+                                    <option value="PPA">PPA</option>
+                                    <option value="Merchant">Merchant</option>
+                                    <option value="Group">Group</option>
+                                </select>
+                            </div>
+                            {/* Capacity Point Filter */}
+                            <div className="flex flex-col gap-1 items-center">
+                                <label className="text-[10px] font-black text-cyan-600 uppercase tracking-widest text-center">Capacity Point</label>
+                                <select
+                                    value={capacityPointFilter}
+                                    onChange={(e) => setCapacityPointFilter(e.target.value)}
+                                    className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-cyan-500/20"
+                                >
+                                    <option value="all">All Points</option>
+                                    <option value="Plan">Plan</option>
+                                    <option value="Actual">Actual / Fcst</option>
+                                    <option value="Rephase">Rephase</option>
+                                </select>
+                            </div>
                             {/* Year Filter */}
-                            <div className="flex items-center gap-2">
-                                <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Year:</label>
+                            <div className="flex flex-col gap-1 items-center">
+                                <label className="text-[10px] font-black text-cyan-600 uppercase tracking-widest text-center">Year</label>
                                 <select
                                     value={selectedYear}
                                     onChange={(e) => setSelectedYear(e.target.value)}
-                                    className="px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-cyan-500/20"
+                                    className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-cyan-500/20"
                                 >
                                     {YEAR_OPTIONS.map(opt => (
                                         <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -685,12 +832,12 @@ export default function WindStatusPage() {
                                 </select>
                             </div>
                             {/* Quarter Filter */}
-                            <div className="flex items-center gap-2">
-                                <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Quarter:</label>
+                            <div className="flex flex-col gap-1 items-center">
+                                <label className="text-[10px] font-black text-cyan-600 uppercase tracking-widest text-center">Quarter</label>
                                 <select
                                     value={selectedQuarter}
                                     onChange={(e) => setSelectedQuarter(e.target.value)}
-                                    className="px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-cyan-500/20"
+                                    className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-cyan-500/20"
                                 >
                                     {availableQuarters.map(opt => (
                                         <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -700,7 +847,7 @@ export default function WindStatusPage() {
                             {/* Export Button */}
                             <button
                                 onClick={() => setShowExportModal(true)}
-                                className="flex items-center gap-2 px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg text-sm font-medium transition-colors"
+                                className="mt-4 flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white rounded-lg text-sm font-bold transition-all shadow-md active:scale-95"
                             >
                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -711,7 +858,7 @@ export default function WindStatusPage() {
                     </div>
                 </div>
 
-                {/* Table with scrollable months section */}
+                {/* Summary Table */}
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                         <thead className="bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
@@ -759,12 +906,12 @@ export default function WindStatusPage() {
                 </div>
             </motion.div>
 
-            {/* Filters and Projects Table */}
+            {/* Filters and List Control Bar */}
             <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-cyan-100 dark:border-gray-700 p-4"
+                className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4"
             >
                 <div className="flex flex-wrap items-center gap-4">
                     <div className="flex items-center gap-2">
@@ -772,13 +919,32 @@ export default function WindStatusPage() {
                         <select
                             value={selectedSection}
                             onChange={(e) => setSelectedSection(e.target.value)}
-                            className="px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300"
+                            className="px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 transition-all outline-none focus:ring-2 focus:ring-cyan-500/20"
                         >
                             {WIND_SECTIONS.map(s => (
                                 <option key={s.value} value={s.value}>{s.label}</option>
                             ))}
                         </select>
                     </div>
+
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Time Grain:</span>
+                        <div className="flex bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-1">
+                            <button
+                                onClick={() => setViewMode('quarterly')}
+                                className={`px-3 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${viewMode === 'quarterly' ? 'bg-cyan-500 text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                            >
+                                Quarterly
+                            </button>
+                            <button
+                                onClick={() => setViewMode('monthly')}
+                                className={`px-3 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${viewMode === 'monthly' ? 'bg-cyan-500 text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                            >
+                                Monthly
+                            </button>
+                        </div>
+                    </div>
+
                     <div className="flex items-center gap-4 ml-auto">
                         <div className="flex items-center gap-1.5">
                             <span className="w-3 h-3 rounded bg-blue-500"></span>
@@ -793,53 +959,63 @@ export default function WindStatusPage() {
                             <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Actual/Fcst</span>
                         </div>
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                    <div className="text-sm text-gray-500 dark:text-gray-400 border-l border-gray-200 dark:border-gray-700 pl-4 ml-2">
                         Showing <span className="font-bold text-cyan-600">{groupedProjects.length}</span> projects
                     </div>
                 </div>
             </motion.div>
 
-            {/* Projects Table */}
+            {/* Projects Table Card - Clean Wrapper */}
             <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.4 }}
-                className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-cyan-100 dark:border-gray-700 overflow-hidden"
+                className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden"
             >
-                <div className="p-4 border-b border-cyan-100 dark:border-gray-700 bg-gradient-to-r from-cyan-50 to-teal-50 dark:from-gray-800 dark:to-gray-800">
+                <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-cyan-50 to-teal-50 dark:from-gray-800 dark:to-gray-800">
                     <h3 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                        <svg className="w-5 h-5 text-cyan-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                        <svg className="w-5 h-5 text-cyan-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
                         </svg>
-                        Wind Projects - Plan / Rephase / Actual Comparison
+                        Detailed Wind Projects
                     </h3>
                 </div>
-                <div className="overflow-x-auto max-h-[500px]">
-                    <table className="w-full text-sm">
-                        <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0">
+
+
+
+                <div className="overflow-x-auto max-h-[600px] scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-800">
+                    <table className="w-full text-sm border-collapse">
+                        <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0 z-30">
                             <tr>
-                                <th className="px-3 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-12">S.No</th>
-                                <th className="px-3 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[180px]">Project Name</th>
-                                <th className="px-3 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Capacity</th>
-                                <th className="px-3 py-3 text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-24">Type</th>
-                                {ALL_MONTHS.map(m => (
-                                    <th key={m.key} className="px-2 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-16">{m.label}</th>
+                                <th className="px-4 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 dark:bg-gray-900 sticky left-0 z-40 border-b border-gray-100 dark:border-gray-800 w-12 text-center">No</th>
+                                <th className="px-4 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 dark:bg-gray-900 sticky left-12 z-40 border-b border-gray-100 dark:border-gray-800 min-w-[200px]">Project Identity</th>
+                                <th className="px-4 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800 min-w-[140px]">SPV</th>
+                                <th className="px-4 py-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800">Capacity</th>
+                                <th className="px-4 py-4 text-center text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800 w-[120px]">Point</th>
+                                {visibleMonths.map(m => (
+                                    <th key={m.key} className="px-2 py-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800 w-24">{m.label}</th>
                                 ))}
-                                <th className="px-3 py-3 text-right text-xs font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider">Total</th>
+                                <th className="px-4 py-4 text-right text-[10px] font-black text-cyan-600 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800 bg-cyan-50/30 dark:bg-cyan-900/10">Project Total</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                             {groupedProjects.map((group, idx) => (
                                 <React.Fragment key={`${group.projectName}-${idx}`}>
                                     {/* Plan Row */}
-                                    <tr className="hover:bg-blue-50/30 dark:hover:bg-gray-700/30">
-                                        <td className="px-3 py-2 text-gray-600 dark:text-gray-400 font-bold" rowSpan={3}>{idx + 1}</td>
-                                        <td className="px-3 py-2 font-semibold text-gray-800 dark:text-white" rowSpan={3}>{group.projectName}</td>
-                                        <td className="px-3 py-2 text-right font-bold text-gray-800 dark:text-white" rowSpan={3}>{formatNumber(group.capacity)}</td>
-                                        <td className="px-3 py-2 text-center">
-                                            <span className="inline-flex px-2 py-0.5 text-xs font-bold rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Plan</span>
+                                    <tr className="group hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                        <td className="px-4 py-3 text-gray-400 font-bold text-xs text-center border-r border-gray-50 dark:border-gray-800 sticky left-0 z-20 bg-inherit" rowSpan={3}>{idx + 1}</td>
+                                        <td className="px-4 py-3 font-bold text-gray-800 dark:text-white sticky left-12 z-20 bg-inherit shadow-[4px_0_10px_rgba(0,0,0,0.02)]" rowSpan={3}>
+                                            <div className="flex flex-col">
+                                                <span>{group.projectName}</span>
+                                                <span className="text-[10px] font-medium text-gray-500 uppercase tracking-tighter mt-0.5">{group.plotLocation || 'N/A'}</span>
+                                            </div>
                                         </td>
-                                        {ALL_MONTHS.map(m => (
+                                        <td className="px-4 py-3 text-gray-500 dark:text-gray-400 font-medium text-xs truncate max-w-[140px]" rowSpan={3} title={group.spv}>{group.spv || '-'}</td>
+                                        <td className="px-4 py-3 text-right font-black text-gray-900 dark:text-white" rowSpan={3}>{formatNumber(group.capacity)} <span className="text-[9px] font-bold opacity-30">MW</span></td>
+                                        <td className="px-4 py-3 text-center border-l border-gray-50 dark:border-gray-800">
+                                            <span className="inline-flex px-2.5 py-1 text-[9px] font-black uppercase rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 shadow-sm">Plan</span>
+                                        </td>
+                                        {visibleMonths.map(m => (
                                             <EditableCell
                                                 key={m.key}
                                                 project={group.plan!}
@@ -853,14 +1029,14 @@ export default function WindStatusPage() {
                                                 disabled={!group.plan || !isAdmin}
                                             />
                                         ))}
-                                        <td className="px-3 py-2 text-right font-bold text-blue-600 dark:text-blue-400">{formatNumber(group.plan?.totalCapacity)}</td>
+                                        <td className="px-4 py-3 text-right font-black text-blue-600 dark:text-blue-400 bg-blue-50/30 dark:bg-blue-900/10">{formatNumber(group.plan?.totalCapacity)}</td>
                                     </tr>
                                     {/* Rephase Row */}
-                                    <tr className="hover:bg-orange-50/30 dark:hover:bg-gray-700/30">
-                                        <td className="px-3 py-2 text-center">
-                                            <span className="inline-flex px-2 py-0.5 text-xs font-bold rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">Rephase</span>
+                                    <tr className="group hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                        <td className="px-4 py-3 text-center border-l border-gray-50 dark:border-gray-800">
+                                            <span className="inline-flex px-2.5 py-1 text-[9px] font-black uppercase rounded-lg bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 shadow-sm">Rephase</span>
                                         </td>
-                                        {ALL_MONTHS.map(m => (
+                                        {visibleMonths.map(m => (
                                             <EditableCell
                                                 key={m.key}
                                                 project={group.rephase!}
@@ -874,14 +1050,14 @@ export default function WindStatusPage() {
                                                 disabled={!group.rephase || !isAdmin}
                                             />
                                         ))}
-                                        <td className="px-3 py-2 text-right font-bold text-orange-600 dark:text-orange-400">{formatNumber(group.rephase?.totalCapacity)}</td>
+                                        <td className="px-4 py-3 text-right font-black text-orange-600 dark:text-orange-400 bg-orange-50/30 dark:bg-orange-900/10">{formatNumber(group.rephase?.totalCapacity)}</td>
                                     </tr>
                                     {/* Actual Row */}
-                                    <tr className="hover:bg-green-50/30 dark:hover:bg-gray-700/30 border-b-2 border-gray-200 dark:border-gray-600">
-                                        <td className="px-3 py-2 text-center">
-                                            <span className="inline-flex px-2 py-0.5 text-xs font-bold rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Actual/Fcst</span>
+                                    <tr className="group hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors bg-white dark:bg-gray-900 border-b-2 border-gray-100 dark:border-gray-800">
+                                        <td className="px-4 py-3 text-center border-l border-gray-50 dark:border-gray-800">
+                                            <span className="inline-flex px-2.5 py-1 text-[9px] font-black uppercase rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-sm">Actual</span>
                                         </td>
-                                        {ALL_MONTHS.map(m => (
+                                        {visibleMonths.map(m => (
                                             <EditableCell
                                                 key={m.key}
                                                 project={group.actual!}
@@ -895,7 +1071,7 @@ export default function WindStatusPage() {
                                                 disabled={!group.actual || !isAdmin}
                                             />
                                         ))}
-                                        <td className="px-3 py-2 text-right font-bold text-green-600 dark:text-green-400">{formatNumber(group.actual?.totalCapacity)}</td>
+                                        <td className="px-4 py-3 text-right font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-900/10">{formatNumber(group.actual?.totalCapacity)}</td>
                                     </tr>
                                 </React.Fragment>
                             ))}
@@ -904,82 +1080,175 @@ export default function WindStatusPage() {
                 </div>
             </motion.div>
 
+
             {/* Export Modal */}
             <AnimatePresence>
-                {showExportModal && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-                        onClick={() => setShowExportModal(false)}
-                    >
+                {
+                    showExportModal && (
                         <motion.div
-                            initial={{ scale: 0.95, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.95, opacity: 0 }}
-                            className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-lg"
-                            onClick={(e) => e.stopPropagation()}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+                            onClick={() => setShowExportModal(false)}
                         >
-                            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                                <h3 className="text-xl font-bold text-gray-800 dark:text-white">Export Wind Data</h3>
-                                <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Select which months to include in the export</p>
-                            </div>
+                            <motion.div
+                                initial={{ scale: 0.95, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.95, opacity: 0 }}
+                                className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-lg"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                                    <h3 className="text-xl font-bold text-gray-800 dark:text-white">Export Wind Data</h3>
+                                    <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Select which months to include in the export</p>
+                                </div>
 
-                            <div className="p-6">
-                                <div className="flex items-center justify-between mb-4">
-                                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Select Months</span>
-                                    <div className="flex gap-2">
-                                        <button onClick={selectAllMonths} className="text-xs text-cyan-500 hover:text-cyan-600">Select All</button>
-                                        <span className="text-gray-300 dark:text-gray-600">|</span>
-                                        <button onClick={clearAllMonths} className="text-xs text-gray-500 hover:text-gray-600">Clear All</button>
+                                <div className="p-6">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Select Months</span>
+                                        <div className="flex gap-2">
+                                            <button onClick={selectAllMonths} className="text-xs text-cyan-500 hover:text-cyan-600">Select All</button>
+                                            <span className="text-gray-300 dark:text-gray-600">|</span>
+                                            <button onClick={clearAllMonths} className="text-xs text-gray-500 hover:text-gray-600">Clear All</button>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {ALL_MONTHS.map(m => (
+                                            <button
+                                                key={m.key}
+                                                onClick={() => toggleExportMonth(m.key)}
+                                                className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${exportMonths.includes(m.key)
+                                                    ? 'bg-cyan-500 text-white'
+                                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                                                    }`}
+                                            >
+                                                {m.label}-{m.year}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                                        <p className="text-xs text-gray-600 dark:text-gray-400">
+                                            <span className="text-cyan-500 font-medium">{exportMonths.length}</span> months selected for export
+                                        </p>
                                     </div>
                                 </div>
 
-                                <div className="grid grid-cols-4 gap-2">
-                                    {ALL_MONTHS.map(m => (
-                                        <button
-                                            key={m.key}
-                                            onClick={() => toggleExportMonth(m.key)}
-                                            className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${exportMonths.includes(m.key)
-                                                ? 'bg-cyan-500 text-white'
-                                                : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
-                                                }`}
-                                        >
-                                            {m.label}-{m.year}
-                                        </button>
-                                    ))}
+                                <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+                                    <button
+                                        onClick={() => setShowExportModal(false)}
+                                        className="px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleExport}
+                                        disabled={exportMonths.length === 0}
+                                        className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                        </svg>
+                                        Export CSV
+                                    </button>
                                 </div>
-
-                                <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                                    <p className="text-xs text-gray-600 dark:text-gray-400">
-                                        <span className="text-cyan-500 font-medium">{exportMonths.length}</span> months selected for export
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
-                                <button
-                                    onClick={() => setShowExportModal(false)}
-                                    className="px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleExport}
-                                    disabled={exportMonths.length === 0}
-                                    className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                                >
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                    </svg>
-                                    Export CSV
-                                </button>
-                            </div>
+                            </motion.div>
                         </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </div>
+                    )
+                }
+            </AnimatePresence >
+
+            {/* Upload Excel Modal */}
+            <AnimatePresence>
+                {
+                    showUploadModal && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+                            onClick={() => setShowUploadModal(false)}
+                        >
+                            <motion.div
+                                initial={{ scale: 0.95, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.95, opacity: 0 }}
+                                className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">Upload Excel File</h3>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Select an AGEL Commissioning Status Excel file to upload</p>
+                                </div>
+
+                                <div className="p-6">
+                                    <input
+                                        type="file"
+                                        accept=".xlsx,.xls"
+                                        id="wind-excel-upload"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                                handleExcelUpload(file);
+                                            }
+                                        }}
+                                    />
+                                    <label
+                                        htmlFor="wind-excel-upload"
+                                        className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-cyan-300 dark:border-cyan-700 rounded-xl cursor-pointer hover:border-cyan-500 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 transition-all"
+                                    >
+                                        {uploading ? (
+                                            <div className="flex flex-col items-center">
+                                                <div className="w-10 h-10 border-4 border-cyan-200 border-t-cyan-500 rounded-full animate-spin mb-3"></div>
+                                                <p className="text-sm font-medium text-cyan-600 dark:text-cyan-400">Uploading...</p>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <svg className="w-12 h-12 text-cyan-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                                </svg>
+                                                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Click to select Excel file</p>
+                                                <p className="text-xs text-gray-500 mt-1">.xlsx or .xls</p>
+                                            </>
+                                        )}
+                                    </label>
+
+                                    {uploadResult && (
+                                        <div className={`mt-4 p-4 rounded-lg ${uploadResult.errors?.length ? 'bg-red-50 dark:bg-red-900/20' : 'bg-green-50 dark:bg-green-900/20'}`}>
+                                            {uploadResult.success !== undefined && (
+                                                <p className="text-sm font-medium text-green-700 dark:text-green-400">
+                                                    ✓ Successfully imported {uploadResult.success} projects
+                                                </p>
+                                            )}
+                                            {uploadResult.sheets_found && (
+                                                <p className="text-xs text-gray-500 mt-1">Sheets: {uploadResult.sheets_found.join(', ')}</p>
+                                            )}
+                                            {uploadResult.errors?.map((err: string, i: number) => (
+                                                <p key={i} className="text-sm text-red-600 dark:text-red-400">{err}</p>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+                                    <button
+                                        onClick={() => {
+                                            setShowUploadModal(false);
+                                            setUploadResult(null);
+                                        }}
+                                        className="px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            </motion.div>
+                        </motion.div>
+                    )
+                }
+            </AnimatePresence >
+        </div >
     );
 }
