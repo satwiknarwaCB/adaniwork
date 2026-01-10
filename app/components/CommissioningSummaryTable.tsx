@@ -111,49 +111,56 @@ export function SummaryTable({ title, projects, monthColumns, monthLabels, forma
         actualData.total = actualInternal.total;
     }
 
-    const renderRow = (label: string, data: any, bgClass: string = '') => (
-        <tr className={bgClass}>
-            <td className="px-2 py-1 text-[10px] font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">{label}</td>
+    const renderRow = (label: string, data: any, rowClass: string = '') => (
+        <tr className={`transition-colors ${rowClass}`}>
+            <td className="px-4 py-3 text-[10px] font-bold text-gray-700 dark:text-gray-300 whitespace-nowrap uppercase tracking-wider">{label}</td>
             {monthColumns.map(m => (
-                <td key={m} className="px-1 py-1 text-[10px] text-center text-gray-600 dark:text-gray-400">{formatNumber(data[m])}</td>
+                <td key={m} className={`px-2 py-3 text-[10px] text-center ${data[m] ? 'text-gray-900 dark:text-white font-medium' : 'text-gray-400'}`}>
+                    {formatNumber(data[m])}
+                </td>
             ))}
-            <td className="px-1 py-1 text-[10px] text-center font-bold text-gray-900 dark:text-white">{formatNumber(data.totalCapacity)}</td>
-            <td className="px-1 py-1 text-[10px] text-center font-bold text-[#0B74B0] dark:text-blue-400">{formatNumber(data.cummTillOct)}</td>
-            <td className="px-1 py-1 text-[10px] text-center text-gray-500">{formatNumber(data.q1)}</td>
-            <td className="px-1 py-1 text-[10px] text-center text-gray-500">{formatNumber(data.q2)}</td>
-            <td className="px-1 py-1 text-[10px] text-center text-gray-500">{formatNumber(data.q3)}</td>
-            <td className="px-1 py-1 text-[10px] text-center text-gray-500">{formatNumber(data.q4)}</td>
+            <td className="px-2 py-3 text-[10px] text-center font-black text-gray-900 dark:text-white bg-gray-50/30 dark:bg-gray-900/20">{formatNumber(data.totalCapacity)}</td>
+            <td className="px-2 py-3 text-[10px] text-center font-black text-[#0B74B0] dark:text-blue-400 bg-blue-50/20 dark:bg-blue-900/10 border-x border-blue-50 dark:border-blue-900/20">{formatNumber(data.cummTillOct)}</td>
+            <td className="px-2 py-3 text-[10px] text-center font-bold text-gray-500">{formatNumber(data.q1)}</td>
+            <td className="px-2 py-3 text-[10px] text-center font-bold text-gray-500">{formatNumber(data.q2)}</td>
+            <td className="px-2 py-3 text-[10px] text-center font-bold text-gray-500">{formatNumber(data.q3)}</td>
+            <td className="px-2 py-3 text-[10px] text-center font-bold text-gray-500">{formatNumber(data.q4)}</td>
         </tr>
     );
 
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
-            <div className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-2">
-                <h3 className="text-xs font-bold text-gray-700 dark:text-gray-200 uppercase tracking-widest">{title}</h3>
+        <div className="bg-white dark:bg-gray-950 rounded-[2rem] border border-gray-100 dark:border-gray-800 overflow-hidden shadow-sm">
+            <div className="bg-gradient-to-r from-gray-50/50 to-white dark:from-gray-900/50 dark:to-gray-950 border-b border-gray-100 dark:border-gray-800 px-6 py-4">
+                <h3 className="text-sm font-black text-[#1F2937] dark:text-gray-100 uppercase tracking-[0.1em]">{title}</h3>
             </div>
-            <div className="overflow-x-auto">
-                <table className="min-w-full text-[10px]">
-                    <thead className="bg-[#f8f9fa] dark:bg-gray-900">
+            <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-800">
+                <table className="min-w-full text-[10px] border-collapse">
+                    <thead className="bg-[#F9FAFB] dark:bg-gray-900/50">
                         <tr>
-                            <th className="px-2 py-2 text-left text-[9px] font-bold text-gray-500 uppercase">Plan / Actual</th>
+                            <th className="px-4 py-3 text-left text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800">PLAN / ACTUAL</th>
                             {monthLabels.map((m, idx) => (
-                                <th key={idx} className="px-1 py-2 text-center text-[9px] font-bold text-gray-500 uppercase">{m}</th>
+                                <th key={idx} className="px-2 py-3 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800">{m}</th>
                             ))}
-                            <th className="px-1 py-2 text-center text-[9px] font-bold text-gray-500 uppercase">Total Capacity</th>
-                            <th className="px-1 py-2 text-center text-[9px] font-bold text-[#0B74B0] uppercase">Cumm till 30-Nov-25</th>
-                            <th className="px-1 py-2 text-center text-[9px] font-bold text-gray-500 uppercase">Q1</th>
-                            <th className="px-1 py-2 text-center text-[9px] font-bold text-gray-500 uppercase">Q2</th>
-                            <th className="px-1 py-2 text-center text-[9px] font-bold text-gray-500 uppercase">Q3</th>
-                            <th className="px-1 py-2 text-center text-[9px] font-bold text-gray-500 uppercase">Q4</th>
+                            <th className="px-2 py-3 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800">TOTAL CAPACITY</th>
+                            <th className="px-2 py-3 text-center text-[9px] font-black text-[#0B74B0] dark:text-blue-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800">CUMM TILL 30-NOV-25</th>
+                            <th className="px-2 py-3 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800">Q1</th>
+                            <th className="px-2 py-3 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800">Q2</th>
+                            <th className="px-2 py-3 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800">Q3</th>
+                            <th className="px-2 py-3 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800">Q4</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                        {renderRow('Plan', planData.total, 'bg-gray-50/50 dark:bg-gray-800/50 font-bold')}
-                        {Object.entries(planData.byType).map(([type, data]) => renderRow(type, data))}
-                        {renderRow('Rephase', rephaseData.total, 'bg-amber-50/30 dark:bg-amber-900/10 font-bold')}
-                        {Object.entries(rephaseData.byType).map(([type, data]) => renderRow(type, data))}
-                        {renderRow('Actual / Fcst', actualData.total, 'bg-green-50/30 dark:bg-green-900/10 font-bold')}
-                        {Object.entries(actualData.byType).map(([type, data]) => renderRow(type, data))}
+                    <tbody className="divide-y divide-gray-50 dark:divide-gray-900">
+                        {/* PLAN Row - Adani Deep Blue */}
+                        {renderRow('Plan', planData.total, 'bg-[#0B74B0]/15 dark:bg-[#0B74B0]/20 font-black text-[#0B74B0] dark:text-[#4DA8D8] border-l-4 border-l-[#0B74B0]')}
+                        {Object.entries(planData.byType).map(([type, data]) => renderRow(type, data, 'hover:bg-gray-50/50 dark:hover:bg-gray-900/20 pl-6'))}
+
+                        {/* REPHASE Row - Adani Amber/Yellow */}
+                        {renderRow('Rephase', rephaseData.total, 'bg-[#F59E0B]/15 dark:bg-[#F59E0B]/20 font-black text-[#B45309] dark:text-[#FBBF24] border-l-4 border-l-[#F59E0B]')}
+                        {Object.entries(rephaseData.byType).map(([type, data]) => renderRow(type, data, 'hover:bg-gray-50/50 dark:hover:bg-gray-900/20 pl-6'))}
+
+                        {/* ACTUAL/FCST Row - Adani Green */}
+                        {renderRow('Actual / Fcst', actualData.total, 'bg-[#10B981]/15 dark:bg-[#10B981]/20 font-black text-[#047857] dark:text-[#34D399] border-l-4 border-l-[#10B981]')}
+                        {Object.entries(actualData.byType).map(([type, data]) => renderRow(type, data, 'hover:bg-gray-50/50 dark:hover:bg-gray-900/20 pl-6'))}
                     </tbody>
                 </table>
             </div>

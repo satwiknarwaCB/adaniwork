@@ -996,7 +996,7 @@ export default function CommissioningStatusPage() {
                                         <td rowSpan={displayRows.length} className="px-3 py-2 text-xs align-middle text-center border-r border-gray-100 dark:border-gray-800">
                                           <span className="font-medium text-gray-500">{project.projectType}</span>
                                         </td>
-                                        <td rowSpan={displayRows.length} className="px-3 py-2 text-xs text-gray-600 dark:text-gray-400 align-middle text-center border-r border-gray-100 dark:border-gray-800">
+                                        <td rowSpan={displayRows.length} className="px-3 py-2 text-xs text-gray-600 dark:text-gray-400 align-middle border-r border-gray-100 dark:border-gray-800 text-center">
                                           {project.plotLocation}
                                         </td>
                                         <td rowSpan={displayRows.length} className="px-2 py-2 text-xs font-bold text-gray-900 dark:text-white align-middle text-center border-r border-gray-200 dark:border-gray-700 w-[70px]">

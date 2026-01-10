@@ -95,3 +95,58 @@ Thumbs.db
 package-lock.json
 yarn.lock
 /lib/generated/prisma
+
+# ============================================
+# Temporary/Debug Scripts - DO NOT COMMIT
+# ============================================
+
+# QA and validation scripts
+qa_*.js
+qa_*.ts
+qa_*.txt
+validate_*.js
+quick_check.js
+check_*.js
+compare_*.js
+trace_*.js
+search_*.js
+debug_*.js
+audit*.js
+audit*.txt
+
+# Python analysis scripts
+analyze_*.py
+check_*.py
+
+# One-time database scripts
+clean_reset.ts
+restore_*.js
+restore_*.ts
+export_*.js
+import_*.js
+add_missing*.js
+
+# Output/result files
+*_output.txt
+*_report.txt
+*_result.txt
+*_results.txt
+diag*.txt
+summary*.txt
+rows.txt
+sheets.txt
+totals.txt
+
+# Test/temp scripts
+test_*.js
+test_*.ts
+simple_*.js
+full_*.js
+
+# SQLite exports
+*.db
+*.sqlite
+
+# Excel data files (keep in data folder only)
+/*.xlsx
+/*.xls

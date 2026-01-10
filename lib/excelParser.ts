@@ -14,17 +14,17 @@ const SECTION_MARKERS: Record<string, [string, string, boolean]> = {
     'a. khavda solar': ['Khavda Solar', 'A', true],
     'b. rajasthan solar projects': ['Rajasthan Solar', 'B', true],
     'b. rajasthan solar': ['Rajasthan Solar', 'B', true],
-    'c. rajasthan solar projects': ['Rajasthan Solar Additional 500MW', 'C', true],
+    'c. rajasthan solar - additional': ['Rajasthan Solar Additional 500MW', 'C', true],
     'c. rajasthan solar': ['Rajasthan Solar Additional 500MW', 'C', true],
     'd1. khavda solar': ['Khavda Solar Copper+Merchant 50MW', 'D1', false],
-    'd1. khavda solarar': ['Khavda Solar Copper+Merchant 50MW', 'D1', false],
     'd2. khavda solar': ['Khavda Solar Internal 650MW', 'D2', false],
-    'd2. khavda solarar': ['Khavda Solar Internal 650MW', 'D2', false],
-    // Wind Sections - matching original Python parser
+    // Wind Sections
     'a. khavda wind projects': ['Khavda Wind', 'A', true],
     'a. khavda wind': ['Khavda Wind', 'A', true],
+    'b. khavda wind internal': ['Khavda Wind Internal 421MW', 'B', false],
     'b. khavda wind': ['Khavda Wind Internal 421MW', 'B', false],
     'c. mundra wind': ['Mundra Wind 76MW', 'C', true],
+    'd. mundra wind internal': ['Mundra Wind Internal 224.4MW', 'D', false],
     'd. mundra wind': ['Mundra Wind Internal 224.4MW', 'D', false],
 };
 
@@ -36,12 +36,15 @@ const SKIP_PATTERNS = [
 
 function safeFloat(val: any): number | null {
     if (val === null || val === undefined || val === '') return null;
-    const num = parseFloat(String(val).replace(/,/g, '').replace(/%/g, ''));
-    return isNaN(num) ? null : num;
+    let str = String(val).replace(/,/g, '').replace(/%/g, '').trim();
+    if (str === '-') return 0;
+    const num = parseFloat(str);
+    return isNaN(num) ? null : Math.round(num * 100) / 100;
 }
 
 export async function parseExcelWorkbook(buffer: Buffer): Promise<ExcelParseResult> {
-    const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+    // IMPORTANT: cellDates: false to get raw Excel serial numbers (no timezone issues)
+    const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: false });
     const sheetsFound = workbook.SheetNames;
 
     let summarySheetName = sheetsFound.find(s => s.toLowerCase().includes('summary') && s.toLowerCase().includes('linked'));
@@ -84,29 +87,29 @@ export async function parseExcelWorkbook(buffer: Buffer): Promise<ExcelParseResu
                 else if (low === 'q3') colMap['q3'] = idx;
                 else if (low === 'q4') colMap['q4'] = idx;
 
-                // Handle date headers - could be Date object (cellDates:true) or numeric serial
-                if (cell instanceof Date) {
+                // Handle date headers - use raw serial number (no timezone issues)
+                const numVal = Number(cell);
+                if (!isNaN(numVal) && numVal > 40000 && numVal < 50000) {
+                    // Excel serial date - parse directly without timezone issues
+                    const date = XLSX.SSF.parse_date_code(numVal);
                     const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-                    const mKey = monthNames[cell.getMonth()];
+                    const mKey = monthNames[date.m - 1];
                     colMap[mKey] = idx;
-                } else {
-                    const numVal = Number(cell);
-                    if (!isNaN(numVal) && numVal > 40000 && numVal < 50000) {
-                        const date = XLSX.SSF.parse_date_code(numVal);
-                        const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-                        const mKey = monthNames[date.m - 1];
-                        colMap[mKey] = idx;
-                    } else if (!low.includes('cumm') && !low.includes('total')) {
-                        // Month text matching - but skip if it's a cumm or total column
-                        const months: Record<string, string> = {
-                            'apr': 'apr', 'may': 'may', 'jun': 'jun', 'jul': 'jul', 'aug': 'aug', 'sep': 'sep',
-                            'oct': 'oct', 'nov': 'nov', 'dec': 'dec', 'jan': 'jan', 'feb': 'feb', 'mar': 'mar'
-                        };
-                        for (const [key, val] of Object.entries(months)) {
-                            if (low.includes(key + '-') || low === key) {
-                                colMap[val] = idx;
-                                break;
-                            }
+                } else if (cell instanceof Date) {
+                    // Fallback for Date objects - use UTC month
+                    const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+                    const mKey = monthNames[cell.getUTCMonth()];
+                    colMap[mKey] = idx;
+                } else if (!low.includes('cumm') && !low.includes('total')) {
+                    // Month text matching - but skip if it's a cumm or total column
+                    const months: Record<string, string> = {
+                        'apr': 'apr', 'may': 'may', 'jun': 'jun', 'jul': 'jul', 'aug': 'aug', 'sep': 'sep',
+                        'oct': 'oct', 'nov': 'nov', 'dec': 'dec', 'jan': 'jan', 'feb': 'feb', 'mar': 'mar'
+                    };
+                    for (const [key, val] of Object.entries(months)) {
+                        if (low.includes(key + '-') || low === key) {
+                            colMap[val] = idx;
+                            break;
                         }
                     }
                 }
@@ -149,10 +152,12 @@ export async function parseExcelWorkbook(buffer: Buffer): Promise<ExcelParseResu
 
         const nameIdx = colMap['projectName'];
         const rowName = row[nameIdx];
+        const sno = row[colMap['sno']];
+        const hasNewSno = sno !== undefined && sno !== null && sno !== '' && sno !== sticky.sno;
 
-        if (rowName && String(rowName).trim().length > 2) {
-            sticky.projectName = String(rowName).trim();
-            sticky.sno = row[colMap['sno']];
+        if ((rowName && String(rowName).trim().length > 1) || hasNewSno) {
+            sticky.projectName = rowName ? String(rowName).trim() : (sticky.projectName || 'Unnamed');
+            sticky.sno = sno;
             sticky.spv = row[colMap['spv']] || '';
             sticky.projectType = row[colMap['projectType']] || '';
             sticky.plotLocation = row[colMap['plotLocation']] || '';
@@ -183,14 +188,21 @@ export async function parseExcelWorkbook(buffer: Buffer): Promise<ExcelParseResu
         };
 
         ['apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec', 'jan', 'feb', 'mar'].forEach(m => {
-            project[m] = safeFloat(row[colMap[m]]);
+            const val = safeFloat(row[colMap[m]]);
+            project[m] = val !== null ? Math.round(val * 100) / 100 : null;
         });
-        project.totalCapacity = safeFloat(row[colMap['totalCapacity']]);
-        project.cummTillOct = safeFloat(row[colMap['cummTillOct']]);
-        project.q1 = safeFloat(row[colMap['q1']]);
-        project.q2 = safeFloat(row[colMap['q2']]);
-        project.q3 = safeFloat(row[colMap['q3']]);
-        project.q4 = safeFloat(row[colMap['q4']]);
+        const tc = safeFloat(row[colMap['totalCapacity']]);
+        project.totalCapacity = tc !== null ? Math.round(tc * 100) / 100 : null;
+        const ct = safeFloat(row[colMap['cummTillOct']]);
+        project.cummTillOct = ct !== null ? Math.round(ct * 100) / 100 : null;
+        const q1 = safeFloat(row[colMap['q1']]);
+        project.q1 = q1 !== null ? Math.round(q1 * 100) / 100 : null;
+        const q2 = safeFloat(row[colMap['q2']]);
+        project.q2 = q2 !== null ? Math.round(q2 * 100) / 100 : null;
+        const q3 = safeFloat(row[colMap['q3']]);
+        project.q3 = q3 !== null ? Math.round(q3 * 100) / 100 : null;
+        const q4 = safeFloat(row[colMap['q4']]);
+        project.q4 = q4 !== null ? Math.round(q4 * 100) / 100 : null;
 
         projects.push(project);
     }
@@ -208,10 +220,11 @@ export async function parseExcelWorkbook(buffer: Buffer): Promise<ExcelParseResu
 }
 
 export async function importProjectsToDb(projects: any[], fiscalYear: string = 'FY_25-26') {
-    // Deduplicate
+    // Deduplicate - IMPORTANT: Include plotLocation and capacity to distinguish same-named projects
     const unique = new Map<string, any>();
     projects.forEach(p => {
-        const key = `${p.projectName}|${p.spv}|${p.planActual}|${p.section}|${p.category}`;
+        // Include plotLocation and capacity in key to keep projects with same name but different plots
+        const key = `${p.projectName}|${p.spv}|${p.planActual}|${p.section}|${p.category}|${p.plotLocation}|${p.capacity}`;
         if (!unique.has(key)) {
             unique.set(key, p);
         } else {

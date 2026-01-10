@@ -133,8 +133,8 @@ export default function CommissioningDashboard() {
     const [bizModelProject, setBizModelProject] = useState('All Projects');
     const [bizModelView, setBizModelView] = useState('yearly');
 
-    // Business Model Filter for charts
-    const [businessModelFilter, setBusinessModelFilter] = useState('All Models');
+    // Status Type Filter (Plan/Rephase/Actual) - Main toggle
+    const [selectedStatusType, setSelectedStatusType] = useState<'Plan' | 'Rephase' | 'Actual'>('Plan');
     const [timelineBusinessModel, setTimelineBusinessModel] = useState('All Models');
     const [timelineCategory, setTimelineCategory] = useState('All Categories');
 
@@ -226,15 +226,20 @@ export default function CommissioningDashboard() {
         if (scope === 'Wind') projs = projs.filter(isWind);
         if (scope !== 'Overall' && scope !== 'Solar' && scope !== 'Wind') projs = projs.filter(p => p.projectName === scope);
 
-        const plan = projs.filter(p => p.planActual === 'Plan').reduce((s, p) => s + (p.capacity || 0), 0);
+        const plan = projs.filter(p => p.planActual === 'Plan').reduce((s, p) => s + (p.totalCapacity || 0), 0);
         const rephase = projs.filter(p => p.planActual === 'Rephase').reduce((s, p) => s + (p.totalCapacity || 0), 0);
         const actual = projs.filter(p => p.planActual === 'Actual').reduce((s, p) => s + (p.totalCapacity || 0), 0);
 
         // Count unique projects by name only (ignore planActual type) - matches individual pages
         const uniqueProjects = new Set(projs.map(p => `${p.projectName}|${p.spv}`)).size;
 
-        return { plan, rephase, actual, projectsCount: uniqueProjects, achievement: plan > 0 ? (actual / plan) * 100 : 0 };
-    }, [allProjects]);
+        // Return the value based on selected status type
+        const selectedValue = selectedStatusType === 'Plan' ? plan : selectedStatusType === 'Rephase' ? rephase : actual;
+        const comparisonBasis = selectedStatusType === 'Plan' ? plan : rephase; // Compare against plan or rephase
+        const achievement = comparisonBasis > 0 ? (actual / comparisonBasis) * 100 : 0;
+
+        return { plan, rephase, actual, selectedValue, projectsCount: uniqueProjects, achievement };
+    }, [allProjects, selectedStatusType]);
 
     const formatNumber = (val: any) => {
         if (val === null || val === undefined) return '-';
@@ -289,7 +294,10 @@ export default function CommissioningDashboard() {
         if (mainTimelineProject !== 'All Projects') projs = projs.filter(p => p.projectName === mainTimelineProject);
         if (mainTimelineSPV !== 'All SPVs') projs = projs.filter(p => p.spv === mainTimelineSPV);
         projs = filterByCategory(projs, timelineCategory);
+
+        // Apply business model filter
         projs = filterByBusinessModel(projs, timelineBusinessModel);
+
         return projs;
     }, [allProjects, mainTimelineProject, mainTimelineSPV, timelineCategory, timelineBusinessModel]);
 
@@ -302,7 +310,7 @@ export default function CommissioningDashboard() {
             { name: 'H2 (Oct-Mar)', period: 'h2', months: h2Months }
         ].map(h => ({
             name: h.name,
-            'PPA Plan': filteredTimelineProjects.filter(p => p.planActual === 'Plan').reduce((s, p) => s + h.months.reduce((ms, m) => ms + ((p as any)[m] || 0), 0), 0),
+            'Target Plan': filteredTimelineProjects.filter(p => p.planActual === 'Plan').reduce((s, p) => s + h.months.reduce((ms, m) => ms + ((p as any)[m] || 0), 0), 0),
             'Actual Commissioning': filteredTimelineProjects.filter(p => p.planActual === 'Actual').reduce((s, p) => s + h.months.reduce((ms, m) => ms + ((p as any)[m] || 0), 0), 0),
             'Rephase Strategy': filteredTimelineProjects.filter(p => p.planActual === 'Rephase').reduce((s, p) => s + h.months.reduce((ms, m) => ms + ((p as any)[m] || 0), 0), 0),
         }));
@@ -313,7 +321,7 @@ export default function CommissioningDashboard() {
             const key = `q${idx + 1}` as 'q1' | 'q2' | 'q3' | 'q4';
             return {
                 name: q,
-                'PPA Plan': filteredTimelineProjects.filter(p => p.planActual === 'Plan').reduce((s, p) => s + ((p as any)[key] || 0), 0),
+                'Target Plan': filteredTimelineProjects.filter(p => p.planActual === 'Plan').reduce((s, p) => s + ((p as any)[key] || 0), 0),
                 'Actual Commissioning': filteredTimelineProjects.filter(p => p.planActual === 'Actual').reduce((s, p) => s + ((p as any)[key] || 0), 0),
                 'Rephase Strategy': filteredTimelineProjects.filter(p => p.planActual === 'Rephase').reduce((s, p) => s + ((p as any)[key] || 0), 0),
             };
@@ -327,7 +335,7 @@ export default function CommissioningDashboard() {
             const rephaseVal = filteredTimelineProjects.filter(p => p.planActual === 'Rephase').reduce((s, p) => s + ((p as any)[key] || 0), 0);
             return {
                 name: monthLabels[idx],
-                'PPA Plan': planVal,
+                'Target Plan': planVal,
                 'Actual Commissioning': actualVal,
                 'Rephase Strategy': rephaseVal,
                 Deviation: actualVal - planVal,
@@ -346,7 +354,8 @@ export default function CommissioningDashboard() {
 
         // Current Period configuration based on "As on 31-Oct-25"
         if (achieveView === 'yearly') {
-            plan = projs.filter(p => p.planActual === 'Plan').reduce((s, p) => s + (p.capacity || 0), 0);
+            // Use totalCapacity (sum of monthly phasing) NOT capacity (static rating)
+            plan = projs.filter(p => p.planActual === 'Plan').reduce((s, p) => s + (p.totalCapacity || 0), 0);
             actual = projs.filter(p => p.planActual === 'Actual').reduce((s, p) => s + (p.totalCapacity || 0), 0);
             periodName = 'Full FY';
         } else if (achieveView === 'half-yearly') {
@@ -392,13 +401,13 @@ export default function CommissioningDashboard() {
             });
         }
 
-        // Calculate based on period view
+        // Calculate based on period view - ALWAYS use totalCapacity for yearly
         const getValueByPeriod = (p: CommissioningProject) => {
-            if (techMixView === 'yearly') return p.capacity || 0;
+            if (techMixView === 'yearly') return p.totalCapacity || 0;
             if (techMixView === 'half-yearly') return (p.q1 || 0) + (p.q2 || 0); // Shows H1
             if (techMixView === 'quarterly') return p.q3 || 0; // Shows current Q3
             if (techMixView === 'monthly') return p.oct || 0; // Shows current Oct
-            return p.capacity || 0;
+            return p.totalCapacity || 0;
         };
 
         const solar = projects.filter(p => p.category?.toLowerCase().includes('solar')).reduce((s, p) => s + getValueByPeriod(p), 0);
@@ -434,12 +443,13 @@ export default function CommissioningDashboard() {
             }
         }
 
+        // Use totalCapacity for yearly view, NOT capacity
         const getValueByPeriod = (p: CommissioningProject) => {
-            if (bizModelView === 'yearly') return p.capacity || 0;
+            if (bizModelView === 'yearly') return p.totalCapacity || 0;
             if (bizModelView === 'half-yearly') return (p.q1 || 0) + (p.q2 || 0);
-            if (bizModelView === 'quarterly') return p.q3 || 0; // Changed from q1 to q3
-            if (bizModelView === 'monthly') return p.oct || 0; // Changed from apr to oct
-            return p.capacity || 0;
+            if (bizModelView === 'quarterly') return p.q3 || 0;
+            if (bizModelView === 'monthly') return p.oct || 0;
+            return p.totalCapacity || 0;
         };
 
         const metric = activeDashboard === 'models' ? modelMetric : 'Capacity Share';
@@ -455,11 +465,11 @@ export default function CommissioningDashboard() {
         let cumPlan = 0;
         let cumActual = 0;
         return monthlyData.map(m => {
-            cumPlan += m['PPA Plan'];
+            cumPlan += m['Target Plan'];
             cumActual += m['Actual Commissioning'];
             return {
                 name: m.name,
-                'PPA Plan': cumPlan,
+                'Target Plan': cumPlan,
                 'Actual Commissioning': cumActual,
             };
         });
@@ -477,21 +487,22 @@ export default function CommissioningDashboard() {
 
         const planProjects = solarProjects.filter(p => p.planActual === 'Plan');
         const actualProjects = solarProjects.filter(p => p.planActual === 'Actual');
-        const totalPlan = planProjects.reduce((s, p) => s + (p.capacity || 0), 0);
+        // Use totalCapacity (sum of months) for correct totals
+        const totalPlan = planProjects.reduce((s, p) => s + (p.totalCapacity || 0), 0);
         const totalActual = actualProjects.reduce((s, p) => s + (p.totalCapacity || 0), 0);
 
         const quarterlyAbs = ['Q1', 'Q2', 'Q3', 'Q4'].map((q, idx) => {
             const key = `q${idx + 1}` as 'q1' | 'q2' | 'q3' | 'q4';
             return {
                 name: q,
-                'PPA Plan': planProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
+                'Target Plan': planProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
                 'Actual Commissioning': actualProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
             };
         });
 
         const monthlyAbs = monthKeys.map((key, idx) => ({
             name: monthLabels[idx],
-            'PPA Plan': planProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
+            'Target Plan': planProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
             'Actual Commissioning': actualProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
         }));
 
@@ -499,14 +510,14 @@ export default function CommissioningDashboard() {
         let cPQ = 0, cAQ = 0;
         const quarterlyCum = quarterlyAbs.map(d => ({
             name: d.name,
-            'PPA Plan': (cPQ += d['PPA Plan']),
+            'Target Plan': (cPQ += d['Target Plan']),
             'Actual Commissioning': (cAQ += d['Actual Commissioning'])
         }));
 
         let cPM = 0, cAM = 0;
         const monthlyCum = monthlyAbs.map(d => ({
             name: d.name,
-            'PPA Plan': (cPM += d['PPA Plan']),
+            'Target Plan': (cPM += d['Target Plan']),
             'Actual Commissioning': (cAM += d['Actual Commissioning'])
         }));
 
@@ -537,14 +548,14 @@ export default function CommissioningDashboard() {
             const key = `q${idx + 1}` as 'q1' | 'q2' | 'q3' | 'q4';
             return {
                 name: q,
-                'PPA Plan': planProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
+                'Target Plan': planProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
                 'Actual Commissioning': actualProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
             };
         });
 
         const monthlyAbs = monthKeys.map((key, idx) => ({
             name: monthLabels[idx],
-            'PPA Plan': planProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
+            'Target Plan': planProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
             'Actual Commissioning': actualProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
         }));
 
@@ -552,14 +563,14 @@ export default function CommissioningDashboard() {
         let cPQ = 0, cAQ = 0;
         const quarterlyCum = quarterlyAbs.map(d => ({
             name: d.name,
-            'PPA Plan': (cPQ += d['PPA Plan']),
+            'Target Plan': (cPQ += d['Target Plan']),
             'Actual Commissioning': (cAQ += d['Actual Commissioning'])
         }));
 
         let cPM = 0, cAM = 0;
         const monthlyCum = monthlyAbs.map(d => ({
             name: d.name,
-            'PPA Plan': (cPM += d['PPA Plan']),
+            'Target Plan': (cPM += d['Target Plan']),
             'Actual Commissioning': (cAM += d['Actual Commissioning'])
         }));
 
@@ -590,7 +601,7 @@ export default function CommissioningDashboard() {
             if (deviationView === 'monthly') {
                 return monthKeys.map((key, idx) => ({
                     name: monthLabels[idx],
-                    'PPA Plan': planProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
+                    'Target Plan': planProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
                     'Actual Commissioning': actualProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
                 }));
             }
@@ -599,7 +610,7 @@ export default function CommissioningDashboard() {
                     const keys = idx === 0 ? ['q1', 'q2'] : ['q3', 'q4'];
                     return {
                         name: h,
-                        'PPA Plan': planProjects.reduce((s, p) => s + ((p as any)[keys[0]] || 0) + ((p as any)[keys[1]] || 0), 0),
+                        'Target Plan': planProjects.reduce((s, p) => s + ((p as any)[keys[0]] || 0) + ((p as any)[keys[1]] || 0), 0),
                         'Actual Commissioning': actualProjects.reduce((s, p) => s + ((p as any)[keys[0]] || 0) + ((p as any)[keys[1]] || 0), 0),
                     };
                 });
@@ -608,7 +619,7 @@ export default function CommissioningDashboard() {
                 const key = `q${idx + 1}` as 'q1' | 'q2' | 'q3' | 'q4';
                 return {
                     name: q,
-                    'PPA Plan': planProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
+                    'Target Plan': planProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
                     'Actual Commissioning': actualProjects.reduce((s, p) => s + ((p as any)[key] || 0), 0),
                 };
             });
@@ -616,7 +627,7 @@ export default function CommissioningDashboard() {
 
         return getSourceData().map(q => ({
             name: q.name,
-            Deviation: (q as any)['Actual Commissioning'] - (q as any)['PPA Plan'],
+            Deviation: (q as any)['Actual Commissioning'] - (q as any)['Target Plan'],
         }));
     }, [allProjects, categoryFilter, timelineCategory, timelineBusinessModel, deviationView]);
 
@@ -666,20 +677,41 @@ export default function CommissioningDashboard() {
                         </div>
                     </div>
 
-                    {/* Right: Category Filter - Horizontal Toggle */}
-                    <div className="flex items-center h-8 bg-[#F3F4F6] dark:bg-gray-800 p-1 rounded-lg border border-[#D1D5DB] dark:border-gray-700">
-                        {['All', 'Solar', 'Wind'].map((option) => (
-                            <button
-                                key={option}
-                                onClick={() => setCategoryFilter(option.toLowerCase() as 'all' | 'solar' | 'wind')}
-                                className={`h-full px-4 rounded-md text-xs font-semibold transition-all ${categoryFilter === option.toLowerCase()
-                                    ? 'bg-[#0B74B0] text-white shadow-sm'
-                                    : 'text-[#4B5563] dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700'
-                                    }`}
-                            >
-                                {option}
-                            </button>
-                        ))}
+                    {/* Right: Global Filters Group */}
+                    <div className="flex items-center gap-3">
+                        {/* Plan/Rephase/Actual Toggle - Primary Status Filter */}
+                        <div className="flex items-center h-8 bg-[#F3F4F6] dark:bg-gray-800 p-1 rounded-lg border border-[#D1D5DB] dark:border-gray-700">
+                            {(['Plan', 'Rephase', 'Actual'] as const).map((opt) => (
+                                <button
+                                    key={opt}
+                                    onClick={() => setSelectedStatusType(opt)}
+                                    className={`h-full px-3 rounded-md text-[10px] sm:text-xs font-semibold transition-all ${selectedStatusType === opt
+                                        ? opt === 'Plan' ? 'bg-[#0B74B0] text-white shadow-sm'
+                                            : opt === 'Rephase' ? 'bg-[#F59E0B] text-white shadow-sm'
+                                                : 'bg-[#10B981] text-white shadow-sm'
+                                        : 'text-[#4B5563] dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700'
+                                        }`}
+                                >
+                                    {opt}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Category Filter - Horizontal Toggle */}
+                        <div className="flex items-center h-8 bg-[#F3F4F6] dark:bg-gray-800 p-1 rounded-lg border border-[#D1D5DB] dark:border-gray-700">
+                            {['All', 'Solar', 'Wind'].map((option) => (
+                                <button
+                                    key={option}
+                                    onClick={() => setCategoryFilter(option.toLowerCase() as 'all' | 'solar' | 'wind')}
+                                    className={`h-full px-4 rounded-md text-xs font-semibold transition-all ${categoryFilter === option.toLowerCase()
+                                        ? 'bg-[#0B74B0] text-white shadow-sm'
+                                        : 'text-[#4B5563] dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700'
+                                        }`}
+                                >
+                                    {option}
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 </div>
 
@@ -711,31 +743,50 @@ export default function CommissioningDashboard() {
                 </div>
             </div>
 
-            {/* KPI Section with Precise Math - No subjective labels */}
+            {/* KPI Section - Shows data based on selected Status Type (Plan/Rephase/Actual) */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2 sm:gap-4">
                 <KPICard
-                    label="PPA PORTFOLIO TARGET"
-                    value={kpi1.plan}
+                    label={`${selectedStatusType.toUpperCase()} CAPACITY`}
+                    value={kpi1.selectedValue}
                     unit="MW"
                     trend={`Base: ${kpi1.projectsCount} Project Segments`}
-                    gradient="from-blue-600 to-indigo-700"
+                    gradient={selectedStatusType === 'Plan' ? 'from-blue-600 to-indigo-700' : selectedStatusType === 'Rephase' ? 'from-amber-500 to-orange-600' : 'from-emerald-500 to-teal-600'}
                 />
                 <KPICard
                     label="ACTUAL COMMISSIONING"
                     value={kpi2.actual}
                     unit="MW"
-                    trend={`Actual vs Target Phasing`}
+                    trend={`Actual vs ${selectedStatusType} Target`}
                     gradient="from-emerald-500 to-teal-600"
                 />
                 <KPICard
                     label="STATUS PERFORMANCE"
                     value={kpi3.achievement.toFixed(2)}
                     unit="%"
-                    trend={`Actual / Plan Target (FY)`}
+                    trend={`Actual / ${selectedStatusType} Target (FY)`}
                     gradient="from-indigo-500 to-purple-600"
                 />
             </div>
 
+
+            {/* AGEL OVERALL EXECUTIVE SUMMARY TABLE - (1 + 2) */}
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+                className="w-full"
+            >
+                <SummaryTable
+                    title={`AGEL OVERALL FY 2025-26 (1 + 2)`}
+                    projects={allProjects.filter(p => p.includedInTotal)}
+                    monthColumns={monthKeys}
+                    monthLabels={['APR-25', 'MAY-25', 'JUN-25', 'JUL-25', 'AUG-25', 'SEP-25', 'OCT-25', 'NOV-25', 'DEC-25', 'JAN-26', 'FEB-26', 'MAR-26']}
+                    formatNumber={(val: number | null | undefined) => {
+                        if (val === null || val === undefined) return '-';
+                        return val.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+                    }}
+                />
+            </motion.div>
 
             {/* Section Divider */}
             <div className="flex items-center gap-3">
@@ -1067,8 +1118,9 @@ export default function CommissioningDashboard() {
                                         <XAxis dataKey="name" axisLine={false} tickLine={false} />
                                         <YAxis axisLine={false} tickLine={false} />
                                         <Tooltip formatter={(v: any) => `${v.toLocaleString(undefined, { maximumFractionDigits: 4 })} MW`} />
-                                        <Bar dataKey="PPA Plan" fill="#F97316" radius={[6, 6, 0, 0]} barSize={32} />
-                                        <Bar dataKey="Actual Commissioning" fill="#10B981" radius={[6, 6, 0, 0]} barSize={32} />
+                                        <Bar dataKey="Target Plan" fill="#3B82F6" radius={[4, 4, 0, 0]} barSize={20} />
+                                        <Bar dataKey="Actual Commissioning" fill="#10B981" radius={[4, 4, 0, 0]} barSize={20} />
+                                        <Bar dataKey="Rephase Strategy" fill="#F97316" radius={[4, 4, 0, 0]} barSize={20} />
                                     </BarChart>
                                 </ResponsiveContainer>
                             </ChartContainer>
@@ -1082,8 +1134,9 @@ export default function CommissioningDashboard() {
                                         <XAxis dataKey="name" axisLine={false} tickLine={false} />
                                         <YAxis axisLine={false} tickLine={false} />
                                         <Tooltip formatter={(v: any) => `${v.toLocaleString(undefined, { maximumFractionDigits: 4 })} MW`} />
-                                        <Area type="monotone" dataKey="PPA Plan" stroke="#F97316" fill="#FED7AA" strokeWidth={3} />
-                                        <Area type="monotone" dataKey="Actual Commissioning" stroke="#10B981" fill="#A7F3D0" strokeWidth={3} />
+                                        <Area type="monotone" dataKey="Target Plan" stroke="#3B82F6" fill="url(#colorPlanH)" />
+                                        <Area type="monotone" dataKey="Actual Commissioning" stroke="#10B981" fill="url(#colorActualH)" strokeWidth={3} />
+                                        <Area type="monotone" dataKey="Rephase Strategy" stroke="#F97316" fill="url(#colorRephaseH)" />
                                     </AreaChart>
                                 </ResponsiveContainer>
                             </ChartContainer>
@@ -1183,7 +1236,7 @@ export default function CommissioningDashboard() {
                                         <XAxis dataKey="name" axisLine={false} tickLine={false} />
                                         <YAxis axisLine={false} tickLine={false} />
                                         <Tooltip formatter={(v: any) => `${v.toLocaleString(undefined, { maximumFractionDigits: 4 })} MW`} />
-                                        <Bar dataKey="PPA Plan" fill="#06B6D4" radius={[6, 6, 0, 0]} barSize={32} />
+                                        <Bar dataKey="Target Plan" fill="#06B6D4" radius={[6, 6, 0, 0]} barSize={32} />
                                         <Bar dataKey="Actual Commissioning" fill="#10B981" radius={[6, 6, 0, 0]} barSize={32} />
                                     </BarChart>
                                 </ResponsiveContainer>
@@ -1198,7 +1251,7 @@ export default function CommissioningDashboard() {
                                         <XAxis dataKey="name" axisLine={false} tickLine={false} />
                                         <YAxis axisLine={false} tickLine={false} />
                                         <Tooltip formatter={(v: any) => `${v.toLocaleString(undefined, { maximumFractionDigits: 4 })} MW`} />
-                                        <Area type="monotone" dataKey="PPA Plan" stroke="#06B6D4" fill="#A5F3FC" strokeWidth={3} />
+                                        <Area type="monotone" dataKey="Target Plan" stroke="#06B6D4" fill="#A5F3FC" strokeWidth={3} />
                                         <Area type="monotone" dataKey="Actual Commissioning" stroke="#10B981" fill="#A7F3D0" strokeWidth={3} />
                                     </AreaChart>
                                 </ResponsiveContainer>

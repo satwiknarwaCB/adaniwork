@@ -300,9 +300,13 @@ export default function SolarStatusPage() {
     return solarProjects.filter(p => {
       // Section Filter
       if (selectedSection !== 'all' && p.section !== selectedSection) return false;
+
+      // Project Type Filter (PPA, Merchant, Group)
+      if (projectTypeFilter !== 'all' && p.projectType !== projectTypeFilter) return false;
+
       return true;
     });
-  }, [solarProjects, selectedSection]);
+  }, [solarProjects, selectedSection, projectTypeFilter]);
 
   // Filters projects based on ALL active filters for the detailed projects table
   const detailedFilteredProjects = useMemo(() => {
@@ -406,7 +410,7 @@ export default function SolarStatusPage() {
     const actualProjects = includedProjects.filter((p: CommissioningProject) => p.planActual === 'Actual');
     const rephaseProjects = includedProjects.filter((p: CommissioningProject) => p.planActual === 'Rephase');
 
-    const totalPlan = planProjects.reduce((s: number, p: CommissioningProject) => s + (p.capacity || 0), 0);
+    const totalPlan = planProjects.reduce((s: number, p: CommissioningProject) => s + (p.totalCapacity || 0), 0);
     const totalActual = actualProjects.reduce((s: number, p: CommissioningProject) => s + (p.totalCapacity || 0), 0);
     const totalRephase = rephaseProjects.reduce((s: number, p: CommissioningProject) => s + (p.totalCapacity || 0), 0);
     // Count unique projects by name only (ignore planActual type)
@@ -424,7 +428,7 @@ export default function SolarStatusPage() {
       const sectionProjects = planProjects.filter((p: CommissioningProject) => p.section === section.value);
       return {
         name: section.label.replace('A. ', '').replace('B. ', '').replace('C. ', '').replace('D1. ', '').replace('D2. ', ''),
-        value: sectionProjects.reduce((s: number, p: CommissioningProject) => s + (p.capacity || 0), 0),
+        value: sectionProjects.reduce((s: number, p: CommissioningProject) => s + (p.totalCapacity || 0), 0),
         color: section.value === 'A' ? '#F97316' :
           section.value === 'B' ? '#FB923C' : '#FDBA74'
       };
@@ -992,6 +996,10 @@ export default function SolarStatusPage() {
                 {ALL_MONTHS.map(m => (
                   <th key={m.key} className="px-2 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-16">{m.label}</th>
                 ))}
+                <th className="px-3 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Q1</th>
+                <th className="px-3 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Q2</th>
+                <th className="px-3 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Q3</th>
+                <th className="px-3 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Q4</th>
                 <th className="px-3 py-3 text-right text-xs font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wider">Total</th>
               </tr>
             </thead>
@@ -1027,6 +1035,10 @@ export default function SolarStatusPage() {
                         disabled={!group.plan || !isAdmin}
                       />
                     ))}
+                    <td className="px-3 py-2 text-right text-gray-500 font-medium">{formatNumber(group.plan?.q1)}</td>
+                    <td className="px-3 py-2 text-right text-gray-500 font-medium">{formatNumber(group.plan?.q2)}</td>
+                    <td className="px-3 py-2 text-right text-gray-500 font-medium">{formatNumber(group.plan?.q3)}</td>
+                    <td className="px-3 py-2 text-right text-gray-500 font-medium">{formatNumber(group.plan?.q4)}</td>
                     <td className="px-3 py-2 text-right font-bold text-blue-600 dark:text-blue-400">{formatNumber(group.plan?.totalCapacity)}</td>
                   </tr>
                   {/* Rephase Row */}
@@ -1048,6 +1060,10 @@ export default function SolarStatusPage() {
                         disabled={!group.rephase || !isAdmin}
                       />
                     ))}
+                    <td className="px-3 py-2 text-right text-gray-500 font-medium">{formatNumber(group.rephase?.q1)}</td>
+                    <td className="px-3 py-2 text-right text-gray-500 font-medium">{formatNumber(group.rephase?.q2)}</td>
+                    <td className="px-3 py-2 text-right text-gray-500 font-medium">{formatNumber(group.rephase?.q3)}</td>
+                    <td className="px-3 py-2 text-right text-gray-500 font-medium">{formatNumber(group.rephase?.q4)}</td>
                     <td className="px-3 py-2 text-right font-bold text-orange-600 dark:text-orange-400">{formatNumber(group.rephase?.totalCapacity)}</td>
                   </tr>
                   {/* Actual Row */}
@@ -1069,6 +1085,10 @@ export default function SolarStatusPage() {
                         disabled={!group.actual || !isAdmin}
                       />
                     ))}
+                    <td className="px-3 py-2 text-right text-gray-500 font-medium">{formatNumber(group.actual?.q1)}</td>
+                    <td className="px-3 py-2 text-right text-gray-500 font-medium">{formatNumber(group.actual?.q2)}</td>
+                    <td className="px-3 py-2 text-right text-gray-500 font-medium">{formatNumber(group.actual?.q3)}</td>
+                    <td className="px-3 py-2 text-right text-gray-500 font-medium">{formatNumber(group.actual?.q4)}</td>
                     <td className="px-3 py-2 text-right font-bold text-green-600 dark:text-green-400">{formatNumber(group.actual?.totalCapacity)}</td>
                   </tr>
                 </React.Fragment>

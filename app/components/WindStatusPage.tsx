@@ -296,11 +296,16 @@ export default function WindStatusPage() {
     // Filters projects for high-level metrics (Top KPIs, Summary Table, Charts)
     // Should react to Section updates but ignores detailed project-level filters
     const overallFilteredProjects = useMemo(() => {
-        return windProjects.filter((p: CommissioningProject) => {
+        return windProjects.filter(p => {
+            // Section Filter
             if (selectedSection !== 'all' && p.section !== selectedSection) return false;
+
+            // Project Type Filter (PPA, Merchant, Group)
+            if (projectTypeFilter !== 'all' && p.projectType !== projectTypeFilter) return false;
+
             return true;
         });
-    }, [windProjects, selectedSection]);
+    }, [windProjects, selectedSection, projectTypeFilter]);
 
     // Filters for the detailed projects table sheet only
     const detailedFilteredProjects = useMemo(() => {
@@ -403,7 +408,7 @@ export default function WindStatusPage() {
         const actualProjects = includedProjects.filter((p: CommissioningProject) => p.planActual === 'Actual');
         const rephaseProjects = includedProjects.filter((p: CommissioningProject) => p.planActual === 'Rephase');
 
-        const totalPlan = planProjects.reduce((s: number, p: CommissioningProject) => s + (p.capacity || 0), 0);
+        const totalPlan = planProjects.reduce((s: number, p: CommissioningProject) => s + (p.totalCapacity || 0), 0);
         const totalActual = actualProjects.reduce((s: number, p: CommissioningProject) => s + (p.totalCapacity || 0), 0);
         const totalRephase = rephaseProjects.reduce((s: number, p: CommissioningProject) => s + (p.totalCapacity || 0), 0);
         // Count unique projects by name only (ignore planActual type)
@@ -421,7 +426,7 @@ export default function WindStatusPage() {
             const sectionProjects = planProjects.filter((p: CommissioningProject) => p.section === section.value);
             return {
                 name: section.label.replace('A. ', '').replace('B. ', '').replace('C. ', '').replace('D. ', ''),
-                value: sectionProjects.reduce((s: number, p: CommissioningProject) => s + (p.capacity || 0), 0),
+                value: sectionProjects.reduce((s: number, p: CommissioningProject) => s + (p.totalCapacity || 0), 0),
                 color: section.value === 'A' || section.value === 'B' ? '#06B6D4' : '#22D3EE'
             };
         }).filter(d => d.value > 0);
@@ -816,7 +821,7 @@ export default function WindStatusPage() {
             >
                 <div className="p-4 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                     <h3 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                        <span className="text-cyan-500">1.</span>
+                        <span className="text-cyan-500">2.</span>
                         AGEL OVERALL WIND FY {fiscalYear.replace('FY_', '').replace('-', '-20')}
                     </h3>
 
@@ -1004,6 +1009,10 @@ export default function WindStatusPage() {
                                 {visibleMonths.map(m => (
                                     <th key={m.key} className="px-2 py-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800 w-24">{m.label}</th>
                                 ))}
+                                <th className="px-4 py-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800">Q1</th>
+                                <th className="px-4 py-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800">Q2</th>
+                                <th className="px-4 py-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800">Q3</th>
+                                <th className="px-4 py-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800">Q4</th>
                                 <th className="px-4 py-4 text-right text-[10px] font-black text-cyan-600 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800 bg-cyan-50/30 dark:bg-cyan-900/10">Project Total</th>
                             </tr>
                         </thead>
@@ -1041,6 +1050,10 @@ export default function WindStatusPage() {
                                                 disabled={!group.plan || !isAdmin}
                                             />
                                         ))}
+                                        <td className="px-4 py-3 text-right font-medium text-gray-500 text-xs">{formatNumber(group.plan?.q1)}</td>
+                                        <td className="px-4 py-3 text-right font-medium text-gray-500 text-xs">{formatNumber(group.plan?.q2)}</td>
+                                        <td className="px-4 py-3 text-right font-medium text-gray-500 text-xs">{formatNumber(group.plan?.q3)}</td>
+                                        <td className="px-4 py-3 text-right font-medium text-gray-500 text-xs">{formatNumber(group.plan?.q4)}</td>
                                         <td className="px-4 py-3 text-right font-black text-blue-600 dark:text-blue-400 bg-blue-50/30 dark:bg-blue-900/10">{formatNumber(group.plan?.totalCapacity)}</td>
                                     </tr>
                                     {/* Rephase Row */}
@@ -1062,6 +1075,10 @@ export default function WindStatusPage() {
                                                 disabled={!group.rephase || !isAdmin}
                                             />
                                         ))}
+                                        <td className="px-4 py-3 text-right font-medium text-gray-500 text-xs">{formatNumber(group.rephase?.q1)}</td>
+                                        <td className="px-4 py-3 text-right font-medium text-gray-500 text-xs">{formatNumber(group.rephase?.q2)}</td>
+                                        <td className="px-4 py-3 text-right font-medium text-gray-500 text-xs">{formatNumber(group.rephase?.q3)}</td>
+                                        <td className="px-4 py-3 text-right font-medium text-gray-500 text-xs">{formatNumber(group.rephase?.q4)}</td>
                                         <td className="px-4 py-3 text-right font-black text-orange-600 dark:text-orange-400 bg-orange-50/30 dark:bg-orange-900/10">{formatNumber(group.rephase?.totalCapacity)}</td>
                                     </tr>
                                     {/* Actual Row */}
@@ -1083,6 +1100,10 @@ export default function WindStatusPage() {
                                                 disabled={!group.actual || !isAdmin}
                                             />
                                         ))}
+                                        <td className="px-4 py-3 text-right font-medium text-gray-500 text-xs">{formatNumber(group.actual?.q1)}</td>
+                                        <td className="px-4 py-3 text-right font-medium text-gray-500 text-xs">{formatNumber(group.actual?.q2)}</td>
+                                        <td className="px-4 py-3 text-right font-medium text-gray-500 text-xs">{formatNumber(group.actual?.q3)}</td>
+                                        <td className="px-4 py-3 text-right font-medium text-gray-500 text-xs">{formatNumber(group.actual?.q4)}</td>
                                         <td className="px-4 py-3 text-right font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-900/10">{formatNumber(group.actual?.totalCapacity)}</td>
                                     </tr>
                                 </React.Fragment>
