@@ -6,12 +6,22 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const fiscalYear = searchParams.get('fiscalYear') || 'FY_25-26';
+    const category = searchParams.get('category');
+
+    const where: any = {
+      fiscalYear,
+      isDeleted: false,
+    };
+
+    if (category) {
+      where.OR = [
+        { category: { contains: category, mode: 'insensitive' } },
+        { projectName: { contains: category, mode: 'insensitive' } },
+      ];
+    }
 
     const projects = await prisma.commissioningProject.findMany({
-      where: {
-        fiscalYear,
-        isDeleted: false,
-      },
+      where,
       orderBy: [
         { category: 'asc' },
         { sno: 'asc' },

@@ -117,6 +117,8 @@ interface GroupedProject {
     sno: number;
     projectName: string;
     spv: string;
+    projectType: string;
+    plotLocation: string;
     category: string;
     section: string;
     capacity: number;
@@ -195,10 +197,17 @@ export default function WindStatusPage() {
 
     const isLoading = projectsLoading;
 
-    // Deduplicate projects
+    // Deduplicate and filter for Wind only
     const windProjects = useMemo(() => {
         const seen = new Set();
         return rawProjects.filter((p: any) => {
+            // Robust technology check: must be wind-related and NOT solar-related
+            const cat = (p.category || '').toLowerCase();
+            const name = (p.projectName || '').toLowerCase();
+            const isWind = (cat.includes('wind') || name.includes('wind')) && !cat.includes('solar') && !name.includes('solar');
+
+            if (!isWind) return false;
+
             const key = `${p.sno}-${p.projectName}-${p.spv}-${p.category}-${p.section}-${p.planActual}-${p.capacity}`;
             if (seen.has(key)) return false;
             seen.add(key);
@@ -284,28 +293,36 @@ export default function WindStatusPage() {
         return months;
     }, [selectedYear, selectedQuarter]);
 
-    // Filter projects based on all active filters
-    const filteredProjects = useMemo(() => {
-        return windProjects.filter(p => {
+    // Filters projects for high-level metrics (Top KPIs, Summary Table, Charts)
+    // Should react to Section updates but ignores detailed project-level filters
+    const overallFilteredProjects = useMemo(() => {
+        return windProjects.filter((p: CommissioningProject) => {
+            if (selectedSection !== 'all' && p.section !== selectedSection) return false;
+            return true;
+        });
+    }, [windProjects, selectedSection]);
+
+    // Filters for the detailed projects table sheet only
+    const detailedFilteredProjects = useMemo(() => {
+        return windProjects.filter((p: CommissioningProject) => {
             // Section Filter
             if (selectedSection !== 'all' && p.section !== selectedSection) return false;
 
-            // Project Type Filter (PPA, Merchant, Group)
+            // Project Type Filter
             if (projectTypeFilter !== 'all' && p.projectType !== projectTypeFilter) return false;
 
-            // Capacity Point Filter (Plan, Actual, Rephase)
+            // Capacity Point Filter
             if (capacityPointFilter !== 'all' && p.planActual !== capacityPointFilter) return false;
 
             return true;
         });
     }, [windProjects, selectedSection, projectTypeFilter, capacityPointFilter]);
 
-    // Group projects by name with Plan, Rephase, Actual
+    // Group projects for detailed table
     const groupedProjects = useMemo(() => {
         const groups: Record<string, { plan?: CommissioningProject; rephase?: CommissioningProject; actual?: CommissioningProject }> = {};
 
-        filteredProjects.forEach(p => {
-            // Include sno in key so projects with same name/SPV but different S.No are kept separate
+        detailedFilteredProjects.forEach((p: CommissioningProject) => {
             const key = `${p.sno}|${p.projectName}|${p.spv}|${p.section}`;
             if (!groups[key]) groups[key] = {};
 
@@ -314,7 +331,6 @@ export default function WindStatusPage() {
             if (p.planActual === 'Actual') groups[key].actual = p;
         });
 
-        // Convert the grouped object back to an array of GroupedProject objects
         return Object.entries(groups).map(([key, group]) => {
             const [snoStr, projectName, spv, section] = key.split('|');
             const sno = parseInt(snoStr, 10);
@@ -323,9 +339,9 @@ export default function WindStatusPage() {
                 sno: sno,
                 projectName: projectName,
                 spv: spv,
+                projectType: refProject?.projectType || '',
                 plotLocation: refProject?.plotLocation || '',
                 category: refProject?.category || '',
-
                 section: section,
                 capacity: refProject?.capacity || 0,
                 plan: group.plan || null,
@@ -333,7 +349,7 @@ export default function WindStatusPage() {
                 actual: group.actual || null,
             };
         }).sort((a, b) => a.projectName.localeCompare(b.projectName));
-    }, [filteredProjects]);
+    }, [detailedFilteredProjects]);
 
     // Calculate row data for summary table
     const calcRowData = useCallback((projects: CommissioningProject[], months: typeof ALL_MONTHS) => {
@@ -350,13 +366,13 @@ export default function WindStatusPage() {
 
     // Summary data for the table - Only include projects marked for totals
     const summaryData = useMemo(() => {
-        const included = filteredProjects.filter(p => p.includedInTotal);
-        const planProjects = included.filter(p => p.planActual === 'Plan');
-        const rephaseProjects = included.filter(p => p.planActual === 'Rephase');
-        const actualProjects = included.filter(p => p.planActual === 'Actual');
+        const included = overallFilteredProjects.filter((p: CommissioningProject) => p.includedInTotal);
+        const planProjects = included.filter((p: CommissioningProject) => p.planActual === 'Plan');
+        const rephaseProjects = included.filter((p: CommissioningProject) => p.planActual === 'Rephase');
+        const actualProjects = included.filter((p: CommissioningProject) => p.planActual === 'Actual');
 
         const filterByType = (projects: CommissioningProject[], type: string) =>
-            projects.filter(p => p.projectType?.toLowerCase().includes(type));
+            projects.filter((p: CommissioningProject) => p.projectType?.toLowerCase().includes(type.toLowerCase()));
 
         return {
             plan: {
@@ -378,67 +394,68 @@ export default function WindStatusPage() {
                 group: calcRowData(filterByType(actualProjects, 'group'), visibleMonths),
             }
         };
-    }, [filteredProjects, visibleMonths, calcRowData]);
+    }, [overallFilteredProjects, visibleMonths, calcRowData]);
 
     // KPIs - Only include projects marked for total inclusion for high-level metrics
     const kpis = useMemo(() => {
-        const includedProjects = windProjects.filter(p => p.includedInTotal);
-        const planProjects = includedProjects.filter(p => p.planActual === 'Plan');
-        const actualProjects = includedProjects.filter(p => p.planActual === 'Actual');
-        const rephaseProjects = includedProjects.filter(p => p.planActual === 'Rephase');
+        const includedProjects = overallFilteredProjects.filter((p: CommissioningProject) => p.includedInTotal);
+        const planProjects = includedProjects.filter((p: CommissioningProject) => p.planActual === 'Plan');
+        const actualProjects = includedProjects.filter((p: CommissioningProject) => p.planActual === 'Actual');
+        const rephaseProjects = includedProjects.filter((p: CommissioningProject) => p.planActual === 'Rephase');
 
-        const totalPlan = planProjects.reduce((s, p) => s + (p.capacity || 0), 0);
-        const totalActual = actualProjects.reduce((s, p) => s + (p.totalCapacity || 0), 0);
-        const totalRephase = rephaseProjects.reduce((s, p) => s + (p.totalCapacity || 0), 0);
-        // Count unique projects by sno + projectName + spv + section + category (same as table grouping)
-        const projectCount = new Set(includedProjects.filter(p => p.planActual === 'Plan').map(p => `${p.sno}|${p.projectName}|${p.spv}|${p.section}|${p.category}`)).size;
+        const totalPlan = planProjects.reduce((s: number, p: CommissioningProject) => s + (p.capacity || 0), 0);
+        const totalActual = actualProjects.reduce((s: number, p: CommissioningProject) => s + (p.totalCapacity || 0), 0);
+        const totalRephase = rephaseProjects.reduce((s: number, p: CommissioningProject) => s + (p.totalCapacity || 0), 0);
+        // Count unique projects by name only (ignore planActual type)
+        const projectCount = new Set(includedProjects.map((p: CommissioningProject) => `${p.projectName}|${p.spv}`)).size;
         const achievement = totalPlan > 0 ? (totalActual / totalPlan) * 100 : 0;
 
         return { totalPlan, totalActual, totalRephase, projectCount, achievement };
-    }, [windProjects]);
+    }, [overallFilteredProjects]);
 
     // Section-wise capacity breakdown
     const sectionData = useMemo(() => {
-        const planProjects = windProjects.filter(p => p.planActual === 'Plan' && p.includedInTotal);
+        const planProjects = overallFilteredProjects.filter((p: CommissioningProject) => p.planActual === 'Plan' && p.includedInTotal);
         return WIND_SECTIONS.slice(1).map(section => {
-            const sectionProjects = planProjects.filter(p => p.category.includes(section.value));
+            // Match by section field (A, B, C, D)
+            const sectionProjects = planProjects.filter((p: CommissioningProject) => p.section === section.value);
             return {
-                name: section.label.replace('A. ', '').replace('C. ', ''),
-                value: sectionProjects.reduce((s, p) => s + (p.capacity || 0), 0),
-                color: section.value.includes('Khavda') ? '#06B6D4' : '#22D3EE'
+                name: section.label.replace('A. ', '').replace('B. ', '').replace('C. ', '').replace('D. ', ''),
+                value: sectionProjects.reduce((s: number, p: CommissioningProject) => s + (p.capacity || 0), 0),
+                color: section.value === 'A' || section.value === 'B' ? '#06B6D4' : '#22D3EE'
             };
         }).filter(d => d.value > 0);
-    }, [windProjects]);
+    }, [overallFilteredProjects]);
 
     // Chart data
     const quarterlyData = useMemo(() => {
-        const planProjects = windProjects.filter(p => p.planActual === 'Plan');
-        const actualProjects = windProjects.filter(p => p.planActual === 'Actual');
-        const rephaseProjects = windProjects.filter(p => p.planActual === 'Rephase');
+        const planProjects = overallFilteredProjects.filter((p: CommissioningProject) => p.planActual === 'Plan');
+        const actualProjects = overallFilteredProjects.filter((p: CommissioningProject) => p.planActual === 'Actual');
+        const rephaseProjects = overallFilteredProjects.filter((p: CommissioningProject) => p.planActual === 'Rephase');
 
         return ['Q1', 'Q2', 'Q3', 'Q4'].map((q, idx) => {
             const key = `q${idx + 1}` as 'q1' | 'q2' | 'q3' | 'q4';
             return {
                 name: q,
-                Plan: planProjects.reduce((s, p) => s + (p[key] || 0), 0),
-                Rephase: rephaseProjects.reduce((s, p) => s + (p[key] || 0), 0),
-                'Actual/Fcst': actualProjects.reduce((s, p) => s + (p[key] || 0), 0),
+                Plan: planProjects.reduce((s: number, p: CommissioningProject) => s + (p[key] || 0), 0),
+                Rephase: rephaseProjects.reduce((s: number, p: CommissioningProject) => s + (p[key] || 0), 0),
+                'Actual/Fcst': actualProjects.reduce((s: number, p: CommissioningProject) => s + (p[key] || 0), 0),
             };
         });
-    }, [windProjects]);
+    }, [overallFilteredProjects]);
 
     const monthlyData = useMemo(() => {
-        const planProjects = windProjects.filter(p => p.planActual === 'Plan');
-        const actualProjects = windProjects.filter(p => p.planActual === 'Actual');
-        const rephaseProjects = windProjects.filter(p => p.planActual === 'Rephase');
+        const planProjects = overallFilteredProjects.filter((p: CommissioningProject) => p.planActual === 'Plan');
+        const actualProjects = overallFilteredProjects.filter((p: CommissioningProject) => p.planActual === 'Actual');
+        const rephaseProjects = overallFilteredProjects.filter((p: CommissioningProject) => p.planActual === 'Rephase');
 
         return ALL_MONTHS.map(m => ({
             name: m.label,
-            Plan: planProjects.reduce((s, p) => s + ((p as any)[m.key] || 0), 0),
-            Rephase: rephaseProjects.reduce((s, p) => s + ((p as any)[m.key] || 0), 0),
-            'Actual/Fcst': actualProjects.reduce((s, p) => s + ((p as any)[m.key] || 0), 0),
+            Plan: planProjects.reduce((s: number, p: CommissioningProject) => s + ((p as any)[m.key] || 0), 0),
+            Rephase: rephaseProjects.reduce((s: number, p: CommissioningProject) => s + ((p as any)[m.key] || 0), 0),
+            'Actual/Fcst': actualProjects.reduce((s: number, p: CommissioningProject) => s + ((p as any)[m.key] || 0), 0),
         }));
-    }, [windProjects]);
+    }, [overallFilteredProjects]);
 
     const formatNumber = (value: number | null | undefined): string => {
         if (value === null || value === undefined) return '0';
@@ -621,6 +638,7 @@ export default function WindStatusPage() {
                         </div>
                     </div>
 
+
                     {/* KPI Cards */}
                     <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mt-6">
 
@@ -723,6 +741,20 @@ export default function WindStatusPage() {
                             <span className="w-1.5 h-1.5 rounded-full bg-cyan-500"></span>
                             Performance Trend
                         </h3>
+                        <div className="flex bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-1">
+                            <button
+                                onClick={() => setViewMode('quarterly')}
+                                className={`px-3 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${viewMode === 'quarterly' ? 'bg-cyan-500 text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                            >
+                                Quarterly
+                            </button>
+                            <button
+                                onClick={() => setViewMode('monthly')}
+                                className={`px-3 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${viewMode === 'monthly' ? 'bg-cyan-500 text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                            >
+                                Monthly
+                            </button>
+                        </div>
                     </div>
 
                     <div className="h-[280px]">
@@ -782,79 +814,44 @@ export default function WindStatusPage() {
                 transition={{ delay: 0.25 }}
                 className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl overflow-hidden border border-gray-200 dark:border-gray-700"
             >
-                {/* Header with controls */}
-                <div className="p-4 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 border-b border-gray-200 dark:border-gray-700">
-                    <div className="flex flex-wrap items-center justify-between gap-4">
-                        <h3 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                            <span className="text-cyan-500">1.</span>
-                            AGEL OVERALL WIND FY {fiscalYear.replace('FY_', '').replace('-', '-20')}
-                        </h3>
-                        <div className="flex items-center gap-3 flex-wrap">
-                            {/* Project Type Filter */}
-                            <div className="flex flex-col gap-1 items-center">
-                                <label className="text-[10px] font-black text-cyan-600 uppercase tracking-widest text-center">Project Type</label>
-                                <select
-                                    value={projectTypeFilter}
-                                    onChange={(e) => setProjectTypeFilter(e.target.value)}
-                                    className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-cyan-500/20"
-                                >
-                                    <option value="all">All Types</option>
-                                    <option value="PPA">PPA</option>
-                                    <option value="Merchant">Merchant</option>
-                                    <option value="Group">Group</option>
-                                </select>
-                            </div>
-                            {/* Capacity Point Filter */}
-                            <div className="flex flex-col gap-1 items-center">
-                                <label className="text-[10px] font-black text-cyan-600 uppercase tracking-widest text-center">Capacity Point</label>
-                                <select
-                                    value={capacityPointFilter}
-                                    onChange={(e) => setCapacityPointFilter(e.target.value)}
-                                    className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-cyan-500/20"
-                                >
-                                    <option value="all">All Points</option>
-                                    <option value="Plan">Plan</option>
-                                    <option value="Actual">Actual / Fcst</option>
-                                    <option value="Rephase">Rephase</option>
-                                </select>
-                            </div>
-                            {/* Year Filter */}
-                            <div className="flex flex-col gap-1 items-center">
-                                <label className="text-[10px] font-black text-cyan-600 uppercase tracking-widest text-center">Year</label>
-                                <select
-                                    value={selectedYear}
-                                    onChange={(e) => setSelectedYear(e.target.value)}
-                                    className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-cyan-500/20"
-                                >
-                                    {YEAR_OPTIONS.map(opt => (
-                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            {/* Quarter Filter */}
-                            <div className="flex flex-col gap-1 items-center">
-                                <label className="text-[10px] font-black text-cyan-600 uppercase tracking-widest text-center">Quarter</label>
-                                <select
-                                    value={selectedQuarter}
-                                    onChange={(e) => setSelectedQuarter(e.target.value)}
-                                    className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-cyan-500/20"
-                                >
-                                    {availableQuarters.map(opt => (
-                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            {/* Export Button */}
-                            <button
-                                onClick={() => setShowExportModal(true)}
-                                className="mt-4 flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white rounded-lg text-sm font-bold transition-all shadow-md active:scale-95"
+                <div className="p-4 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                    <h3 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                        <span className="text-cyan-500">1.</span>
+                        AGEL OVERALL WIND FY {fiscalYear.replace('FY_', '').replace('-', '-20')}
+                    </h3>
+
+                    <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2 bg-white/50 dark:bg-gray-800/50 p-1 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+                            <select
+                                value={selectedYear}
+                                onChange={(e) => setSelectedYear(e.target.value)}
+                                className="bg-transparent border-none text-[10px] font-bold text-gray-600 dark:text-gray-400 focus:ring-0 cursor-pointer py-1 pl-2 pr-6"
                             >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                </svg>
-                                Export
-                            </button>
+                                {YEAR_OPTIONS.map(opt => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                            </select>
+                            <div className="w-px h-3 bg-gray-200 dark:bg-gray-600"></div>
+                            <select
+                                value={selectedQuarter}
+                                onChange={(e) => setSelectedQuarter(e.target.value)}
+                                className="bg-transparent border-none text-[10px] font-bold text-gray-600 dark:text-gray-400 focus:ring-0 cursor-pointer py-1 pl-2 pr-6"
+                            >
+                                {availableQuarters.map(opt => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                            </select>
                         </div>
+
+                        <button
+                            onClick={() => setShowExportModal(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white rounded-lg text-xs font-bold transition-all shadow-md active:scale-95"
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            Export
+                        </button>
                     </div>
                 </div>
 
@@ -913,54 +910,64 @@ export default function WindStatusPage() {
                 transition={{ delay: 0.3 }}
                 className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4"
             >
-                <div className="flex flex-wrap items-center gap-4">
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Section:</span>
+                <div className="flex flex-wrap items-center gap-6">
+                    <div className="flex items-center gap-3">
                         <select
                             value={selectedSection}
                             onChange={(e) => setSelectedSection(e.target.value)}
-                            className="px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 transition-all outline-none focus:ring-2 focus:ring-cyan-500/20"
+                            className="px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-xs font-black uppercase text-cyan-600 tracking-widest transition-all focus:ring-2 focus:ring-cyan-500/20"
                         >
                             {WIND_SECTIONS.map(s => (
                                 <option key={s.value} value={s.value}>{s.label}</option>
                             ))}
                         </select>
                     </div>
+                    <div className="flex items-center gap-4 border-l border-gray-200 dark:border-gray-700 pl-6">
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Project Type</span>
+                            <select
+                                value={projectTypeFilter}
+                                onChange={(e) => setProjectTypeFilter(e.target.value)}
+                                className="px-2 py-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded text-[10px] font-bold text-gray-700 outline-none focus:ring-1 focus:ring-cyan-500/20"
+                            >
+                                <option value="all">All Types</option>
+                                <option value="PPA">PPA</option>
+                                <option value="Merchant">Merchant</option>
+                                <option value="Group">Group</option>
+                            </select>
+                        </div>
 
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Time Grain:</span>
-                        <div className="flex bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-1">
-                            <button
-                                onClick={() => setViewMode('quarterly')}
-                                className={`px-3 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${viewMode === 'quarterly' ? 'bg-cyan-500 text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                        <div className="flex flex-col gap-0.5">
+                            <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Status</span>
+                            <select
+                                value={capacityPointFilter}
+                                onChange={(e) => setCapacityPointFilter(e.target.value)}
+                                className="px-2 py-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded text-[10px] font-bold text-gray-700 outline-none focus:ring-1 focus:ring-cyan-500/20"
                             >
-                                Quarterly
-                            </button>
-                            <button
-                                onClick={() => setViewMode('monthly')}
-                                className={`px-3 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${viewMode === 'monthly' ? 'bg-cyan-500 text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
-                            >
-                                Monthly
-                            </button>
+                                <option value="all">All Status</option>
+                                <option value="Plan">Plan</option>
+                                <option value="Actual">Actual / Fcst</option>
+                                <option value="Rephase">Rephase</option>
+                            </select>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-4 ml-auto">
-                        <div className="flex items-center gap-1.5">
-                            <span className="w-3 h-3 rounded bg-blue-500"></span>
-                            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Plan</span>
+                    <div className="flex items-center gap-6 ml-auto">
+                        <div className="flex items-center gap-2">
+                            <span className="w-3 h-3 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50"></span>
+                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Plan</span>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                            <span className="w-3 h-3 rounded bg-orange-500"></span>
-                            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Rephase</span>
+                        <div className="flex items-center gap-2">
+                            <span className="w-3 h-3 rounded-full bg-orange-500 shadow-sm shadow-orange-500/50"></span>
+                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Rephase</span>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                            <span className="w-3 h-3 rounded bg-green-500"></span>
-                            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Actual/Fcst</span>
+                        <div className="flex items-center gap-2">
+                            <span className="w-3 h-3 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50"></span>
+                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Actual</span>
                         </div>
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400 border-l border-gray-200 dark:border-gray-700 pl-4 ml-2">
-                        Showing <span className="font-bold text-cyan-600">{groupedProjects.length}</span> projects
+                    <div className="text-xs font-black text-gray-400 uppercase tracking-widest border-l border-gray-200 dark:border-gray-700 pl-6">
+                        Projects: <span className="text-cyan-600">{groupedProjects.length}</span>
                     </div>
                 </div>
             </motion.div>
@@ -977,7 +984,7 @@ export default function WindStatusPage() {
                         <svg className="w-5 h-5 text-cyan-500" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
                         </svg>
-                        Detailed Wind Projects
+                        {selectedSection !== 'all' ? WIND_SECTIONS.find(s => s.value === selectedSection)?.label : 'Wind Projects - Plan / Rephase / Actual Comparison'}
                     </h3>
                 </div>
 
@@ -988,10 +995,12 @@ export default function WindStatusPage() {
                         <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0 z-30">
                             <tr>
                                 <th className="px-4 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 dark:bg-gray-900 sticky left-0 z-40 border-b border-gray-100 dark:border-gray-800 w-12 text-center">No</th>
-                                <th className="px-4 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 dark:bg-gray-900 sticky left-12 z-40 border-b border-gray-100 dark:border-gray-800 min-w-[200px]">Project Identity</th>
+                                <th className="px-4 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 dark:bg-gray-900 sticky left-12 z-40 border-b border-gray-100 dark:border-gray-800 min-w-[200px]">Project Name</th>
                                 <th className="px-4 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800 min-w-[140px]">SPV</th>
+                                <th className="px-4 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800">Type</th>
+                                <th className="px-4 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800">Location</th>
                                 <th className="px-4 py-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800">Capacity</th>
-                                <th className="px-4 py-4 text-center text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800 w-[120px]">Point</th>
+                                <th className="px-4 py-4 text-center text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800 w-[120px]">Status</th>
                                 {visibleMonths.map(m => (
                                     <th key={m.key} className="px-2 py-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800 w-24">{m.label}</th>
                                 ))}
@@ -1005,12 +1014,15 @@ export default function WindStatusPage() {
                                     <tr className="group hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                         <td className="px-4 py-3 text-gray-400 font-bold text-xs text-center border-r border-gray-50 dark:border-gray-800 sticky left-0 z-20 bg-inherit" rowSpan={3}>{idx + 1}</td>
                                         <td className="px-4 py-3 font-bold text-gray-800 dark:text-white sticky left-12 z-20 bg-inherit shadow-[4px_0_10px_rgba(0,0,0,0.02)]" rowSpan={3}>
-                                            <div className="flex flex-col">
-                                                <span>{group.projectName}</span>
-                                                <span className="text-[10px] font-medium text-gray-500 uppercase tracking-tighter mt-0.5">{group.plotLocation || 'N/A'}</span>
-                                            </div>
+                                            <span>{group.projectName}</span>
                                         </td>
                                         <td className="px-4 py-3 text-gray-500 dark:text-gray-400 font-medium text-xs truncate max-w-[140px]" rowSpan={3} title={group.spv}>{group.spv || '-'}</td>
+                                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400 text-[10px] font-bold uppercase" rowSpan={3}>
+                                            <span className={`px-2 py-0.5 rounded-md ${group.projectType?.toLowerCase().includes('ppa') ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>
+                                                {group.projectType || '-'}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-gray-500 dark:text-gray-400 font-medium text-[10px]" rowSpan={3}>{group.plotLocation || '-'}</td>
                                         <td className="px-4 py-3 text-right font-black text-gray-900 dark:text-white" rowSpan={3}>{formatNumber(group.capacity)} <span className="text-[9px] font-bold opacity-30">MW</span></td>
                                         <td className="px-4 py-3 text-center border-l border-gray-50 dark:border-gray-800">
                                             <span className="inline-flex px-2.5 py-1 text-[9px] font-black uppercase rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 shadow-sm">Plan</span>

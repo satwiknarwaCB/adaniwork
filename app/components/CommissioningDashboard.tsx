@@ -187,27 +187,53 @@ export default function CommissioningDashboard() {
     const filteredProjects = useMemo(() => {
         return allProjects.filter(p => {
             if (!p.includedInTotal) return false;
-            const cat = p.category ? p.category.toLowerCase() : '';
-            if (categoryFilter === 'solar' && !cat.includes('solar')) return false;
-            if (categoryFilter === 'wind' && !cat.includes('wind')) return false;
-            if (!selectedSections.includes('all') && !selectedSections.includes(p.category)) return false;
-            if (!selectedModels.includes('all') && !selectedModels.includes(p.projectType)) return false;
+            const cat = (p.category || '').toLowerCase();
+            const sec = (p.section || '').toLowerCase();
+            const name = (p.projectName || '').toLowerCase();
+
+            if (categoryFilter === 'solar') {
+                const isSolar = (cat.includes('solar') || name.includes('solar')) && !cat.includes('wind') && !name.includes('wind');
+                if (!isSolar) return false;
+            }
+            if (categoryFilter === 'wind') {
+                const isWind = (cat.includes('wind') || name.includes('wind')) && !cat.includes('solar') && !name.includes('solar');
+                if (!isWind) return false;
+            }
+
+            if (activeDashboard === 'overview' && selectedSections.length > 0 && !selectedSections.includes('all')) {
+                if (!selectedSections.includes(p.projectName)) return false;
+            }
             return true;
         });
-    }, [allProjects, categoryFilter, selectedSections, selectedModels]);
+    }, [allProjects, categoryFilter, selectedSections, activeDashboard]);
 
     const getKPIData = useCallback((scope: string) => {
         let projs = allProjects.filter(p => p.includedInTotal);
-        if (scope === 'Solar') projs = projs.filter(p => p.category?.toLowerCase().includes('solar'));
-        if (scope === 'Wind') projs = projs.filter(p => p.category?.toLowerCase().includes('wind'));
+
+        const isSolar = (p: CommissioningProject) => {
+            const cat = (p.category || '').toLowerCase();
+            const name = (p.projectName || '').toLowerCase();
+            return (cat.includes('solar') || name.includes('solar')) && !cat.includes('wind') && !name.includes('wind');
+        };
+
+        const isWind = (p: CommissioningProject) => {
+            const cat = (p.category || '').toLowerCase();
+            const name = (p.projectName || '').toLowerCase();
+            return (cat.includes('wind') || name.includes('wind')) && !cat.includes('solar') && !name.includes('solar');
+        };
+
+        if (scope === 'Solar') projs = projs.filter(isSolar);
+        if (scope === 'Wind') projs = projs.filter(isWind);
         if (scope !== 'Overall' && scope !== 'Solar' && scope !== 'Wind') projs = projs.filter(p => p.projectName === scope);
 
         const plan = projs.filter(p => p.planActual === 'Plan').reduce((s, p) => s + (p.capacity || 0), 0);
+        const rephase = projs.filter(p => p.planActual === 'Rephase').reduce((s, p) => s + (p.totalCapacity || 0), 0);
         const actual = projs.filter(p => p.planActual === 'Actual').reduce((s, p) => s + (p.totalCapacity || 0), 0);
-        // Count unique projects by sno + projectName + spv + section + category (same as table grouping)
-        const projectCount = new Set(projs.filter(p => p.planActual === 'Plan').map(p => `${p.sno}|${p.projectName}|${p.spv}|${p.section}|${p.category}`)).size;
 
-        return { plan, actual, projectsCount: projectCount, achievement: plan > 0 ? (actual / plan) * 100 : 0 };
+        // Count unique projects by name only (ignore planActual type) - matches individual pages
+        const uniqueProjects = new Set(projs.map(p => `${p.projectName}|${p.spv}`)).size;
+
+        return { plan, rephase, actual, projectsCount: uniqueProjects, achievement: plan > 0 ? (actual / plan) * 100 : 0 };
     }, [allProjects]);
 
     const formatNumber = (val: any) => {
@@ -686,7 +712,7 @@ export default function CommissioningDashboard() {
             </div>
 
             {/* KPI Section with Precise Math - No subjective labels */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 sm:gap-4">
                 <KPICard
                     label="PPA PORTFOLIO TARGET"
                     value={kpi1.plan}
@@ -707,13 +733,6 @@ export default function CommissioningDashboard() {
                     unit="%"
                     trend={`Actual / Plan Target (FY)`}
                     gradient="from-indigo-500 to-purple-600"
-                />
-                <KPICard
-                    label="EXECUTION DEVIATION"
-                    value={kpi4.actual - kpi4.plan}
-                    unit="MW"
-                    trend={`Delta: Actual - Plan`}
-                    gradient={kpi4.actual >= kpi4.plan ? "from-emerald-400 to-emerald-600" : "from-rose-500 to-red-700"}
                 />
             </div>
 

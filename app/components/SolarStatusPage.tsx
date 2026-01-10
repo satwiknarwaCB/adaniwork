@@ -115,6 +115,8 @@ interface GroupedProject {
   sno: number;
   projectName: string;
   spv: string;
+  projectType: string;
+  plotLocation: string;
   category: string;
   section: string;
   capacity: number;
@@ -194,10 +196,17 @@ export default function SolarStatusPage() {
 
   const isLoading = projectsLoading;
 
-  // Deduplicate projects
+  // Deduplicate and filter for Solar only
   const solarProjects = useMemo(() => {
     const seen = new Set();
     return rawProjects.filter((p: any) => {
+      // Robust technology check: must be solar-related and NOT wind-related
+      const cat = (p.category || '').toLowerCase();
+      const name = (p.projectName || '').toLowerCase();
+      const isSolar = (cat.includes('solar') || name.includes('solar')) && !cat.includes('wind') && !name.includes('wind');
+
+      if (!isSolar) return false;
+
       const key = `${p.sno}-${p.projectName}-${p.spv}-${p.category}-${p.section}-${p.planActual}-${p.capacity}`;
       if (seen.has(key)) return false;
       seen.add(key);
@@ -285,7 +294,18 @@ export default function SolarStatusPage() {
   }, [selectedYear, selectedQuarter]);
 
   // Filter projects based on all active filters
-  const filteredProjects = useMemo(() => {
+  // Filters projects for high-level metrics (Top KPIs, Summary Table, Charts)
+  // Should ignore Project Type and Capacity Point filters as per user request for "Overall Sheet"
+  const overallFilteredProjects = useMemo(() => {
+    return solarProjects.filter(p => {
+      // Section Filter
+      if (selectedSection !== 'all' && p.section !== selectedSection) return false;
+      return true;
+    });
+  }, [solarProjects, selectedSection]);
+
+  // Filters projects based on ALL active filters for the detailed projects table
+  const detailedFilteredProjects = useMemo(() => {
     return solarProjects.filter(p => {
       // Section Filter
       if (selectedSection !== 'all' && p.section !== selectedSection) return false;
@@ -304,7 +324,7 @@ export default function SolarStatusPage() {
   const groupedProjects = useMemo(() => {
     const groups: Record<string, { plan?: CommissioningProject; rephase?: CommissioningProject; actual?: CommissioningProject }> = {};
 
-    filteredProjects.forEach(p => {
+    detailedFilteredProjects.forEach(p => {
       // Include sno in key so projects with same name/SPV but different S.No are kept separate
       const key = `${p.sno}|${p.projectName}|${p.spv}|${p.section}`;
       if (!groups[key]) groups[key] = {};
@@ -323,6 +343,8 @@ export default function SolarStatusPage() {
         sno: sno,
         projectName: projectName,
         spv: spv,
+        projectType: refProject?.projectType || '',
+        plotLocation: refProject?.plotLocation || '',
         category: refProject?.category || '',
         section: section,
         capacity: refProject?.capacity || 0,
@@ -331,30 +353,29 @@ export default function SolarStatusPage() {
         actual: group.actual || null,
       };
     }).sort((a, b) => a.projectName.localeCompare(b.projectName));
-  }, [filteredProjects]);
+  }, [detailedFilteredProjects]);
 
   // Calculate row data for summary table
   const calcRowData = useCallback((projects: CommissioningProject[], months: typeof ALL_MONTHS) => {
     return {
-      months: months.map(m => projects.reduce((s, p) => s + ((p as any)[m.key] || 0), 0)),
-      total: projects.reduce((s, p) => s + (p.totalCapacity || 0), 0),
-      cumm: projects.reduce((s, p) => s + (p.cummTillOct || 0), 0),
-      q1: projects.reduce((s, p) => s + (p.q1 || 0), 0),
-      q2: projects.reduce((s, p) => s + (p.q2 || 0), 0),
-      q3: projects.reduce((s, p) => s + (p.q3 || 0), 0),
-      q4: projects.reduce((s, p) => s + (p.q4 || 0), 0),
+      months: months.map(m => projects.reduce((s: number, p: CommissioningProject) => s + ((p as any)[m.key] || 0), 0)),
+      total: projects.reduce((s: number, p: CommissioningProject) => s + (p.totalCapacity || 0), 0),
+      cumm: projects.reduce((s: number, p: CommissioningProject) => s + (p.cummTillOct || 0), 0),
+      q1: projects.reduce((s: number, p: CommissioningProject) => s + (p.q1 || 0), 0),
+      q2: projects.reduce((s: number, p: CommissioningProject) => s + (p.q2 || 0), 0),
+      q3: projects.reduce((s: number, p: CommissioningProject) => s + (p.q3 || 0), 0),
+      q4: projects.reduce((s: number, p: CommissioningProject) => s + (p.q4 || 0), 0),
     };
   }, []);
 
-  // Summary data for the table - Only include projects marked for totals
   const summaryData = useMemo(() => {
-    const included = filteredProjects.filter(p => p.includedInTotal);
-    const planProjects = included.filter(p => p.planActual === 'Plan');
-    const rephaseProjects = included.filter(p => p.planActual === 'Rephase');
-    const actualProjects = included.filter(p => p.planActual === 'Actual');
+    const included = overallFilteredProjects.filter((p: CommissioningProject) => p.includedInTotal);
+    const planProjects = included.filter((p: CommissioningProject) => p.planActual === 'Plan');
+    const rephaseProjects = included.filter((p: CommissioningProject) => p.planActual === 'Rephase');
+    const actualProjects = included.filter((p: CommissioningProject) => p.planActual === 'Actual');
 
     const filterByType = (projects: CommissioningProject[], type: string) =>
-      projects.filter(p => p.projectType?.toLowerCase().includes(type));
+      projects.filter((p: CommissioningProject) => p.projectType?.toLowerCase().includes(type.toLowerCase()));
 
     return {
       plan: {
@@ -376,68 +397,69 @@ export default function SolarStatusPage() {
         group: calcRowData(filterByType(actualProjects, 'group'), visibleMonths),
       }
     };
-  }, [filteredProjects, visibleMonths, calcRowData]);
+  }, [overallFilteredProjects, visibleMonths, calcRowData]);
 
   // KPIs - Only include projects marked for total inclusion for high-level metrics
   const kpis = useMemo(() => {
-    const includedProjects = solarProjects.filter(p => p.includedInTotal);
-    const planProjects = includedProjects.filter(p => p.planActual === 'Plan');
-    const actualProjects = includedProjects.filter(p => p.planActual === 'Actual');
-    const rephaseProjects = includedProjects.filter(p => p.planActual === 'Rephase');
+    const includedProjects = overallFilteredProjects.filter((p: CommissioningProject) => p.includedInTotal);
+    const planProjects = includedProjects.filter((p: CommissioningProject) => p.planActual === 'Plan');
+    const actualProjects = includedProjects.filter((p: CommissioningProject) => p.planActual === 'Actual');
+    const rephaseProjects = includedProjects.filter((p: CommissioningProject) => p.planActual === 'Rephase');
 
-    const totalPlan = planProjects.reduce((s, p) => s + (p.capacity || 0), 0);
-    const totalActual = actualProjects.reduce((s, p) => s + (p.totalCapacity || 0), 0);
-    const totalRephase = rephaseProjects.reduce((s, p) => s + (p.totalCapacity || 0), 0);
-    // Count unique projects by sno + projectName + spv + section + category (same as table grouping)
-    const projectCount = new Set(includedProjects.filter(p => p.planActual === 'Plan').map(p => `${p.sno}|${p.projectName}|${p.spv}|${p.section}|${p.category}`)).size;
+    const totalPlan = planProjects.reduce((s: number, p: CommissioningProject) => s + (p.capacity || 0), 0);
+    const totalActual = actualProjects.reduce((s: number, p: CommissioningProject) => s + (p.totalCapacity || 0), 0);
+    const totalRephase = rephaseProjects.reduce((s: number, p: CommissioningProject) => s + (p.totalCapacity || 0), 0);
+    // Count unique projects by name only (ignore planActual type)
+    const projectCount = new Set(includedProjects.map((p: CommissioningProject) => `${p.projectName}|${p.spv}`)).size;
     const achievement = totalPlan > 0 ? (totalActual / totalPlan) * 100 : 0;
 
     return { totalPlan, totalActual, totalRephase, projectCount, achievement };
-  }, [solarProjects]);
+  }, [overallFilteredProjects]);
 
   // Section-wise capacity breakdown
   const sectionData = useMemo(() => {
-    const planProjects = solarProjects.filter(p => p.planActual === 'Plan' && p.includedInTotal);
+    const planProjects = overallFilteredProjects.filter((p: CommissioningProject) => p.planActual === 'Plan' && p.includedInTotal);
     return SOLAR_SECTIONS.slice(1).map(section => {
-      const sectionProjects = planProjects.filter(p => p.category.includes(section.value));
+      // Match by section field (A, B, C, D1, D2)
+      const sectionProjects = planProjects.filter((p: CommissioningProject) => p.section === section.value);
       return {
-        name: section.label.replace('A. ', '').replace('B. ', '').replace('C. ', ''),
-        value: sectionProjects.reduce((s, p) => s + (p.capacity || 0), 0),
-        color: section.value.includes('Khavda') ? '#F97316' :
-          section.value.includes('Rajasthan Solar Additional') ? '#FB923C' : '#FDBA74'
+        name: section.label.replace('A. ', '').replace('B. ', '').replace('C. ', '').replace('D1. ', '').replace('D2. ', ''),
+        value: sectionProjects.reduce((s: number, p: CommissioningProject) => s + (p.capacity || 0), 0),
+        color: section.value === 'A' ? '#F97316' :
+          section.value === 'B' ? '#FB923C' : '#FDBA74'
       };
     }).filter(d => d.value > 0);
-  }, [solarProjects]);
+  }, [overallFilteredProjects]);
 
   // Chart data
   const quarterlyData = useMemo(() => {
-    const planProjects = solarProjects.filter(p => p.planActual === 'Plan');
-    const actualProjects = solarProjects.filter(p => p.planActual === 'Actual');
-    const rephaseProjects = solarProjects.filter(p => p.planActual === 'Rephase');
+    const planProjects = overallFilteredProjects.filter((p: CommissioningProject) => p.planActual === 'Plan');
+    const actualProjects = overallFilteredProjects.filter((p: CommissioningProject) => p.planActual === 'Actual');
+    const rephaseProjects = overallFilteredProjects.filter((p: CommissioningProject) => p.planActual === 'Rephase');
 
     return ['Q1', 'Q2', 'Q3', 'Q4'].map((q, idx) => {
       const key = `q${idx + 1}` as 'q1' | 'q2' | 'q3' | 'q4';
       return {
         name: q,
-        Plan: planProjects.reduce((s, p) => s + (p[key] || 0), 0),
-        Rephase: rephaseProjects.reduce((s, p) => s + (p[key] || 0), 0),
-        'Actual/Fcst': actualProjects.reduce((s, p) => s + (p[key] || 0), 0),
+        Plan: planProjects.reduce((s: number, p: CommissioningProject) => s + (p[key] || 0), 0),
+        Rephase: rephaseProjects.reduce((s: number, p: CommissioningProject) => s + (p[key] || 0), 0),
+        'Actual/Fcst': actualProjects.reduce((s: number, p: CommissioningProject) => s + (p[key] || 0), 0),
       };
     });
-  }, [solarProjects]);
+  }, [overallFilteredProjects]);
 
   const monthlyData = useMemo(() => {
-    const planProjects = solarProjects.filter(p => p.planActual === 'Plan');
-    const actualProjects = solarProjects.filter(p => p.planActual === 'Actual');
-    const rephaseProjects = solarProjects.filter(p => p.planActual === 'Rephase');
+    const planProjects = overallFilteredProjects.filter((p: CommissioningProject) => p.planActual === 'Plan');
+    const actualProjects = overallFilteredProjects.filter((p: CommissioningProject) => p.planActual === 'Actual');
+    const rephaseProjects = overallFilteredProjects.filter((p: CommissioningProject) => p.planActual === 'Rephase');
 
     return ALL_MONTHS.map(m => ({
       name: m.label,
-      Plan: planProjects.reduce((s, p) => s + ((p as any)[m.key] || 0), 0),
-      Rephase: rephaseProjects.reduce((s, p) => s + ((p as any)[m.key] || 0), 0),
-      'Actual/Fcst': actualProjects.reduce((s, p) => s + ((p as any)[m.key] || 0), 0),
+      Plan: planProjects.reduce((s: number, p: CommissioningProject) => s + ((p as any)[m.key] || 0), 0),
+      Rephase: rephaseProjects.reduce((s: number, p: CommissioningProject) => s + ((p as any)[m.key] || 0), 0),
+      'Actual/Fcst': actualProjects.reduce((s: number, p: CommissioningProject) => s + ((p as any)[m.key] || 0), 0),
     }));
-  }, [solarProjects]);
+  }, [overallFilteredProjects]);
 
   const formatNumber = (value: number | null | undefined): string => {
     if (value === null || value === undefined) return '0';
@@ -673,7 +695,7 @@ export default function SolarStatusPage() {
         </div>
       </motion.div>
 
-      {/* No Summary Tables as requested by user - Focus is on Charts and Details */}
+
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -782,79 +804,44 @@ export default function SolarStatusPage() {
         transition={{ delay: 0.25 }}
         className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl overflow-hidden border border-gray-200 dark:border-gray-700"
       >
-        {/* Header with controls */}
-        <div className="p-4 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <h3 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-              <span className="text-orange-500">1.</span>
-              AGEL OVERALL SOLAR FY 2025-26
-            </h3>
-            <div className="flex items-center gap-3 flex-wrap">
-              {/* Project Type Filter */}
-              <div className="flex flex-col gap-1 items-center">
-                <label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest text-center">Project Type</label>
-                <select
-                  value={projectTypeFilter}
-                  onChange={(e) => setProjectTypeFilter(e.target.value)}
-                  className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-orange-500/20"
-                >
-                  <option value="all">All Types</option>
-                  <option value="PPA">PPA</option>
-                  <option value="Merchant">Merchant</option>
-                  <option value="Group">Group</option>
-                </select>
-              </div>
-              {/* Capacity Point Filter */}
-              <div className="flex flex-col gap-1 items-center">
-                <label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest text-center">Capacity Point</label>
-                <select
-                  value={capacityPointFilter}
-                  onChange={(e) => setCapacityPointFilter(e.target.value)}
-                  className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-orange-500/20"
-                >
-                  <option value="all">All Points</option>
-                  <option value="Plan">Plan</option>
-                  <option value="Actual">Actual / Fcst</option>
-                  <option value="Rephase">Rephase</option>
-                </select>
-              </div>
-              {/* Year Filter */}
-              <div className="flex flex-col gap-1 items-center">
-                <label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest text-center">Year</label>
-                <select
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(e.target.value)}
-                  className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-orange-500/20"
-                >
-                  {YEAR_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
-              {/* Quarter Filter */}
-              <div className="flex flex-col gap-1 items-center">
-                <label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest text-center">Quarter</label>
-                <select
-                  value={selectedQuarter}
-                  onChange={(e) => setSelectedQuarter(e.target.value)}
-                  className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-orange-500/20"
-                >
-                  {availableQuarters.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
-              {/* Export Button */}
-              <button
-                onClick={() => setShowExportModal(true)}
-                className="mt-4 flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-lg text-sm font-bold transition-all shadow-md active:scale-95"
+        <div className="p-4 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+          <h3 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+            <span className="text-orange-500">1.</span>
+            AGEL OVERALL SOLAR FY 2025-26
+          </h3>
+
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 bg-white/50 dark:bg-gray-800/50 p-1 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(e.target.value)}
+                className="bg-transparent border-none text-[10px] font-bold text-gray-600 dark:text-gray-400 focus:ring-0 cursor-pointer py-1 pl-2 pr-6"
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                Export
-              </button>
+                {YEAR_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+              <div className="w-px h-3 bg-gray-200 dark:bg-gray-600"></div>
+              <select
+                value={selectedQuarter}
+                onChange={(e) => setSelectedQuarter(e.target.value)}
+                className="bg-transparent border-none text-[10px] font-bold text-gray-600 dark:text-gray-400 focus:ring-0 cursor-pointer py-1 pl-2 pr-6"
+              >
+                {availableQuarters.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
             </div>
+
+            <button
+              onClick={() => setShowExportModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-lg text-xs font-bold transition-all shadow-md active:scale-95"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Export
+            </button>
           </div>
         </div>
 
@@ -913,35 +900,65 @@ export default function SolarStatusPage() {
         transition={{ delay: 0.3 }}
         className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-orange-100 dark:border-gray-700 p-4"
       >
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Section:</span>
+        <div className="flex flex-wrap items-center gap-6">
+          <div className="flex items-center gap-3">
             <select
               value={selectedSection}
               onChange={(e) => setSelectedSection(e.target.value)}
-              className="px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300"
+              className="px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-xs font-black uppercase text-orange-600 tracking-widest transition-all focus:ring-2 focus:ring-orange-500/20"
             >
               {SOLAR_SECTIONS.map(s => (
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </select>
           </div>
-          <div className="flex items-center gap-4 ml-auto">
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded bg-blue-500"></span>
-              <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Plan</span>
+
+          <div className="flex items-center gap-4 border-l border-gray-200 dark:border-gray-700 pl-6">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Project Type</span>
+              <select
+                value={projectTypeFilter}
+                onChange={(e) => setProjectTypeFilter(e.target.value)}
+                className="px-2 py-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded text-[10px] font-bold text-gray-700"
+              >
+                <option value="all">All Types</option>
+                <option value="PPA">PPA</option>
+                <option value="Merchant">Merchant</option>
+                <option value="Group">Group</option>
+              </select>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded bg-orange-500"></span>
-              <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Rephase</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded bg-green-500"></span>
-              <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Actual/Fcst</span>
+
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Status</span>
+              <select
+                value={capacityPointFilter}
+                onChange={(e) => setCapacityPointFilter(e.target.value)}
+                className="px-2 py-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded text-[10px] font-bold text-gray-700"
+              >
+                <option value="all">All Status</option>
+                <option value="Plan">Plan</option>
+                <option value="Actual">Actual / Fcst</option>
+                <option value="Rephase">Rephase</option>
+              </select>
             </div>
           </div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            Showing <span className="font-bold text-orange-600">{groupedProjects.length}</span> projects
+
+          <div className="flex items-center gap-6 ml-auto">
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50"></span>
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Plan</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-orange-500 shadow-sm shadow-orange-500/50"></span>
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Rephase</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50"></span>
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Actual</span>
+            </div>
+          </div>
+          <div className="text-xs font-black text-gray-400 uppercase tracking-widest border-l border-gray-200 dark:border-gray-700 pl-6">
+            Projects: <span className="text-orange-600">{groupedProjects.length}</span>
           </div>
         </div>
       </motion.div>
@@ -958,7 +975,7 @@ export default function SolarStatusPage() {
             <svg className="w-5 h-5 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
             </svg>
-            Solar Projects - Plan / Rephase / Actual Comparison
+            {selectedSection !== 'all' ? SOLAR_SECTIONS.find(s => s.value === selectedSection)?.label : 'Solar Projects - Plan / Rephase / Actual Comparison'}
           </h3>
         </div>
         <div className="overflow-x-auto max-h-[500px]">
@@ -968,8 +985,10 @@ export default function SolarStatusPage() {
                 <th className="px-3 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-12">S.No</th>
                 <th className="px-3 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[180px]">Project Name</th>
                 <th className="px-3 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[120px]">SPV</th>
+                <th className="px-3 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Type</th>
+                <th className="px-3 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Location</th>
                 <th className="px-3 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Capacity</th>
-                <th className="px-3 py-3 text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-24">Plan/Actual</th>
+                <th className="px-3 py-3 text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-24">Status</th>
                 {ALL_MONTHS.map(m => (
                   <th key={m.key} className="px-2 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-16">{m.label}</th>
                 ))}
@@ -984,6 +1003,12 @@ export default function SolarStatusPage() {
                     <td className="px-3 py-2 text-gray-600 dark:text-gray-400 font-bold" rowSpan={3}>{idx + 1}</td>
                     <td className="px-3 py-2 font-semibold text-gray-800 dark:text-white" rowSpan={3}>{group.projectName}</td>
                     <td className="px-3 py-2 text-gray-600 dark:text-gray-400 text-sm" rowSpan={3}>{group.spv || '-'}</td>
+                    <td className="px-3 py-2 text-gray-600 dark:text-gray-400 text-[10px] font-bold uppercase" rowSpan={3}>
+                      <span className={`px-1.5 py-0.5 rounded ${group.projectType?.toLowerCase().includes('ppa') ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>
+                        {group.projectType || '-'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 dark:text-gray-400 text-[10px]" rowSpan={3}>{group.plotLocation || '-'}</td>
                     <td className="px-3 py-2 text-right font-bold text-gray-800 dark:text-white" rowSpan={3}>{formatNumber(group.capacity)}</td>
                     <td className="px-3 py-2 text-center">
                       <span className="inline-flex px-2 py-0.5 text-xs font-bold rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Plan</span>
